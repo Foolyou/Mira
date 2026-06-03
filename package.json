@@ -2,6 +2,8 @@
   "name": "mira-copilot",
   "version": "2.0.0",
   "description": "Family-first one-person-company operating copilot — daemonless reminder loop over SQLite (Bun-only)",
+  "license": "MIT",
+  "author": "Chen An",
   "type": "module",
   "module": "src/cli.ts",
   "bin": {
@@ -10,6 +12,7 @@
   },
   "files": [
     "src",
+    "LICENSE",
     "README.md",
     "AGENTS.md",
     "install.sh",
