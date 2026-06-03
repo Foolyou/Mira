@@ -64,6 +64,22 @@ const TASK_FIELDS = [
   "context",
 ];
 
+// Terminal task states: a task here is finished or abandoned, so its pending
+// one-time reminders should stop firing.
+const TERMINAL_STATES = new Set(["done", "cancelled"]);
+
+// Resolve every active one-time reminder attached to a task. Returns the number
+// of specs affected. Recurring specs (rule_id NOT NULL) are independent of task
+// state and are left untouched.
+export function cancelTaskReminders(db: Database, taskId: number): number {
+  const info = db
+    .query(
+      "UPDATE reminder_specs SET status='cancelled' WHERE task_id=? AND rule_id IS NULL AND status='active'",
+    )
+    .run(taskId);
+  return info.changes;
+}
+
 export function updateTask(db: Database, id: number, patch: Record<string, any>) {
   const sets: string[] = [];
   const vals: any[] = [];
@@ -77,6 +93,11 @@ export function updateTask(db: Database, id: number, patch: Record<string, any>)
   sets.push("updated_at = ?");
   vals.push(nowTs(), id);
   db.query(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  // Entering a terminal state suppresses any pending reminders, mirroring
+  // `task done`.
+  if ("status" in patch && TERMINAL_STATES.has(patch.status)) {
+    cancelTaskReminders(db, id);
+  }
   return getTask(db, id);
 }
 
@@ -85,10 +106,7 @@ export function doneTask(db: Database, id: number) {
     nowTs(),
     id,
   );
-  // Resolve any active one-time reminders on this task.
-  db.query(
-    "UPDATE reminder_specs SET status='cancelled' WHERE task_id=? AND status='active'",
-  ).run(id);
+  cancelTaskReminders(db, id);
   return getTask(db, id);
 }
 
@@ -142,6 +160,18 @@ export function addReminder(db: Database, taskId: number, at: string) {
   return db
     .query("SELECT * FROM reminder_specs WHERE id = ?")
     .get(Number(info.lastInsertRowid));
+}
+
+// Cancel a single active reminder by spec id. Returns the updated spec, or null
+// if no active spec with that id existed.
+export function cancelReminder(db: Database, id: number) {
+  const info = db
+    .query(
+      "UPDATE reminder_specs SET status='cancelled' WHERE id=? AND status='active'",
+    )
+    .run(id);
+  if (!info.changes) return null;
+  return db.query("SELECT * FROM reminder_specs WHERE id = ?").get(id);
 }
 
 export function listReminders(db: Database, includeInactive = false) {

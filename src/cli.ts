@@ -85,6 +85,7 @@ TASKS
 
 REMINDERS
   reminder add --task <id> --at "YYYY-MM-DD HH:MM"        one-time
+  reminder cancel <id> | --task <id>                      stop a pending reminder (or all on a task)
   recur add <title> --pattern-type <t> --pattern-config '<json>' [--remind-time HH:MM --area a --duration N]
   recur list
   reminder list [--all]
@@ -206,6 +207,16 @@ async function main() {
           const at = str(flags.at);
           if (task == null || !at) fail("reminder add needs --task <id> --at <ts>");
           out(core.addReminder(db, task, at));
+        } else if (sub === "cancel") {
+          const id = num(_[2]);
+          const task = num(flags.task);
+          if (id != null) {
+            const spec = core.cancelReminder(db, id);
+            if (!spec) fail(`no active reminder with id ${id}`);
+            out(spec);
+          } else if (task != null) {
+            out({ task_id: task, cancelled: core.cancelTaskReminders(db, task) });
+          } else fail("reminder cancel needs an <id> or --task <id>");
         } else if (sub === "list") {
           out(core.listReminders(db, !!flags.all));
         } else fail(`unknown reminder subcommand: ${sub}`);

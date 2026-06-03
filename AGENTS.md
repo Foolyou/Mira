@@ -22,6 +22,9 @@ mira capture "<随手记>"
 ## Reminders (the whole point — never let one fail silently)
 ```
 mira reminder add --task <id> --at "YYYY-MM-DD HH:MM"          # one-time
+mira reminder cancel <id>                                      # stop one pending reminder
+mira reminder cancel --task <id>                               # stop all pending reminders on a task
+#   task done / task update --status cancelled also auto-cancel a task's pending one-time reminders
 mira recur add "<title>" --pattern-type monthly --pattern-config '{"day":26}' --remind-time 09:00
 #   pattern-type: daily | weekly | monthly | yearly_dates | yearly_weeks
 #   weekly  {"weekdays":[0]}  (0=Mon)   monthly {"day":26}|{"day":"last"}
