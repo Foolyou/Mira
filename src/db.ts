@@ -11,7 +11,7 @@ export const SCHEMA_VERSION = 1;
 // Workspace / path resolution. Order (highest precedence first):
 //   per-call override  >  MIRA_WORKSPACE env  >  default ~/.mira/workspace
 // Granular MIRA_DB_PATH / MIRA_DEMO_DB_PATH override the individual db file
-// (used by Docker and tests). The MCP server flips the override per call.
+// (used by Docker and tests). The CLI flips the override per invocation.
 // ---------------------------------------------------------------------------
 let workspaceOverride: string | null = null;
 

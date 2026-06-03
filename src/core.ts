@@ -1,6 +1,6 @@
 // core.ts — the structured layer. Every core* function returns a
-// JSON-serializable value and never prints. The CLI and the MCP server both
-// call straight into here; add a capability once, expose it in both.
+// JSON-serializable value and never prints. The CLI is the one caller; add a
+// capability once here, expose it as a `mira` command.
 import type { Database } from "bun:sqlite";
 import { nowTs, parseLocal, fmtDate, startOfDay, addDays } from "./time.ts";
 import { isDueOn, type Rule } from "./recurrence.ts";

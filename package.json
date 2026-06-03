@@ -24,7 +24,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["mcp", "reminders", "cli", "bun", "sqlite", "claude-code", "codex", "copilot"],
+  "keywords": ["skill", "agent-skills", "reminders", "cli", "bun", "sqlite", "claude-code", "codex", "copilot"],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -36,7 +36,6 @@
     "dist:darwin-x64": "bun build --compile --target=bun-darwin-x64 src/cli.ts --outfile dist/mira-darwin-x64"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "nodemailer": "^6.9.0"
   },
   "devDependencies": {

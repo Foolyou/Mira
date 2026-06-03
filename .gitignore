@@ -1,7 +1,6 @@
 node_modules/
 mira
 dist/
-.mcp.json
 *.db
 *.db-wal
 *.db-shm

@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 // cli.ts — the contract. Everything a reminder needs is reachable here so that
-// Claude Code (MCP) and Codex (shell) are automatically on equal footing.
+// every brain (Claude Code, Codex, cron) drives Mira the same way: one `mira`
+// command per capability. The agent skill in skill.ts just guides this surface.
 import { openDb, resolveWorkspace, configGet, configSet, configAll } from "./db.ts";
 import { redactConfigValue, redactConfigMap } from "./secret.ts";
-import { installClaudeCode, installCodex, cronLines, NPM_PKG, type Invoker } from "./install.ts";
+import { installSkill, cronLines, NPM_PKG, type Invoker } from "./install.ts";
 import * as core from "./core.ts";
 import { sweep, deliverAck } from "./sweep.ts";
 import { sendTest } from "./delivery/index.ts";
@@ -95,14 +96,12 @@ KNOWLEDGE
   note add <content> [--company N --kind k]
   capture <text>
 
-SERVER
-  mcp [--workspace <dir>]                            stdio MCP server (for Claude Code)
-
 ADMIN
   config get <key> | config set <key> <value> | config list
   import-v1 --from <lifework.db> [--force]
   doctor [--check-channel]
-  install <claude-code|codex|cron> [--via binary|bunx|global] [--bin path --workspace dir]
+  install claude-code|codex [--user]                 install the Mira skill (project, or --user/global)
+  install cron [--via binary|bunx|global] [--bin path --workspace dir] | crontab -
 
 GLOBAL FLAGS
   --workspace <dir> | --demo | --db <path>
@@ -116,30 +115,25 @@ async function main() {
     return;
   }
 
-  // `mira mcp` hands off to the stdio MCP server (its own per-call DB seam);
-  // it must NOT open or close the CLI's single DB handle.
-  if (cmd === "mcp") {
-    const { startMcp } = await import("./mcp.ts");
-    await startMcp();
-    return;
-  }
-
-  // `mira install <target>` writes agent/cron config; no task DB needed.
-  // --via binary|bunx|global selects how Mira gets launched from that config.
+  // `mira install <target>`: install the Mira skill into a brain, or emit cron.
+  //   claude-code | codex  -> write SKILL.md (project scope; --user for global)
+  //   cron                 -> print crontab lines (--via picks how Mira launches)
   if (cmd === "install") {
     const target = _[1];
-    const workspace = str(flags.workspace) ?? resolveWorkspace();
-    const via = str(flags.via) ?? (/[\\/]bun(\.exe)?$/.test(process.execPath) ? "global" : "binary");
-    let invoker: Invoker;
-    if (via === "bunx") invoker = { command: "bunx", prefix: [NPM_PKG] };
-    else if (via === "global") invoker = { command: "mira", prefix: [] };
-    else if (via === "binary") invoker = { command: str(flags.bin) ?? selfBin(), prefix: [] };
-    else { fail("--via must be binary|bunx|global"); }
-    const t = { invoker: invoker!, workspace };
-    if (target === "claude-code") out(installClaudeCode(t));
-    else if (target === "codex") out(installCodex(t));
-    else if (target === "cron") process.stdout.write(cronLines(t));
-    else fail("install <claude-code|codex|cron> [--via binary|bunx|global] [--bin path --workspace dir]");
+    if (target === "claude-code" || target === "codex") {
+      out(installSkill(target, flags.user ? "user" : "project"));
+    } else if (target === "cron") {
+      const workspace = str(flags.workspace) ?? resolveWorkspace();
+      const via = str(flags.via) ?? (/[\\/]bun(\.exe)?$/.test(process.execPath) ? "global" : "binary");
+      let invoker: Invoker;
+      if (via === "bunx") invoker = { command: "bunx", prefix: [NPM_PKG] };
+      else if (via === "global") invoker = { command: "mira", prefix: [] };
+      else if (via === "binary") invoker = { command: str(flags.bin) ?? selfBin(), prefix: [] };
+      else { fail("--via must be binary|bunx|global"); }
+      process.stdout.write(cronLines({ invoker: invoker!, workspace }));
+    } else {
+      fail("install <claude-code|codex|cron> [--user] [--via binary|bunx|global --bin path --workspace dir]");
+    }
     return;
   }
 

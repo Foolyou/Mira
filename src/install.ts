@@ -1,12 +1,15 @@
-// install.ts — register Mira into the two brains and into cron. Works for both
-// distribution forms: the self-contained binary (primary) and `bunx`/global npm
-// (secondary, Bun-only). Every target points at ONE invocation and ONE
-// workspace so the SQLite truth source stays shared.
+// install.ts — register Mira into the brains (as an Agent Skill) and into cron.
+// Works for both distribution forms: the self-contained binary (primary) and
+// `bunx`/global npm (secondary, Bun-only). Cron targets point at ONE invocation
+// and ONE workspace so the SQLite truth source stays shared; the skill is the
+// same SKILL.md for every agent (the open Agent Skills standard), written from
+// the string baked into the binary.
 import { homedir } from "os";
 import { join, dirname } from "path";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
+import { SKILL_MD } from "./skill.ts";
 
-// The npm package name (secondary path). `bunx <PKG> mcp` resolves to the CLI.
+// The npm package name (secondary path). `bunx <PKG> <command>` runs the CLI.
 export const NPM_PKG = "mira-copilot";
 
 // How Mira gets launched, before its own subcommand. Three shapes:
@@ -30,44 +33,33 @@ function shell(t: InstallTarget, ...rest: string[]): string {
   return [t.invoker.command, ...args(t, ...rest)].join(" ");
 }
 
-// Claude Code: write/merge a project-local .mcp.json. Also returns the
-// user-scope command for those who prefer a global registration.
-export function installClaudeCode(t: InstallTarget, cwd = process.cwd()) {
-  const file = join(cwd, ".mcp.json");
-  let doc: any = {};
-  if (existsSync(file)) {
-    try {
-      doc = JSON.parse(readFileSync(file, "utf8"));
-    } catch {
-      throw new Error(`${file} exists but is not valid JSON; fix or remove it first`);
-    }
+// The brains Mira can install its skill into, and the scope to write it at.
+export type SkillAgent = "claude-code" | "codex";
+export type SkillScope = "project" | "user";
+
+// Where each agent discovers a skill named "mira". Project scope is a dir under
+// the current repo/cwd; user scope is global (Codex honors $CODEX_HOME). Both
+// load the SKILL.md standard, so the file we write is identical across agents.
+function skillDir(agent: SkillAgent, scope: SkillScope, cwd: string): string {
+  if (agent === "claude-code") {
+    const root = scope === "user" ? join(homedir(), ".claude") : join(cwd, ".claude");
+    return join(root, "skills", "mira");
   }
-  doc.mcpServers ??= {};
-  doc.mcpServers.mira = {
-    command: t.invoker.command,
-    args: args(t, "mcp", "--workspace", t.workspace),
-  };
-  writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
-  return {
-    wrote: file,
-    entry: doc.mcpServers.mira,
-    user_scope_command: `claude mcp add mira --scope user -- ${shell(t, "mcp", "--workspace", t.workspace)}`,
-  };
+  // codex
+  const home = process.env.CODEX_HOME ?? join(homedir(), ".codex");
+  const root = scope === "user" ? home : join(cwd, ".codex");
+  return join(root, "skills", "mira");
 }
 
-// Codex: append an [mcp_servers.mira] block to ~/.codex/config.toml if absent.
-export function installCodex(t: InstallTarget) {
-  const file = join(homedir(), ".codex", "config.toml");
-  mkdirSync(dirname(file), { recursive: true });
-  const existing = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (/^\s*\[mcp_servers\.mira\]/m.test(existing)) {
-    return { file, added: false, note: "[mcp_servers.mira] already present — left untouched" };
-  }
-  const argv = args(t, "mcp", "--workspace", t.workspace);
-  const argsToml = "[" + argv.map((a) => `"${a}"`).join(", ") + "]";
-  const block = `\n[mcp_servers.mira]\ncommand = "${t.invoker.command}"\nargs = ${argsToml}\n`;
-  writeFileSync(file, existing + block);
-  return { file, added: true, note: "appended [mcp_servers.mira]" };
+// Install the Mira skill for one agent. Writes the canonical SKILL.md (baked
+// into the binary) so the agent picks Mira up implicitly by description and can
+// drive the CLI. Overwrites an existing copy so re-running keeps it current.
+export function installSkill(agent: SkillAgent, scope: SkillScope, cwd = process.cwd()) {
+  const dir = skillDir(agent, scope, cwd);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "SKILL.md");
+  writeFileSync(file, SKILL_MD);
+  return { agent, scope, wrote: file };
 }
 
 // Cron: return the crontab lines (we print, never auto-overwrite the user's

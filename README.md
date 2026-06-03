@@ -11,7 +11,7 @@ only state is one SQLite file.
 bun install
 bun test                       # 24 tests: idempotency, recurrence, modes, retry, migration
 bun run src/cli.ts help        # CLI (the contract)
-bun run src/mcp.ts             # stdio MCP server (convenience layer)
+bun run src/cli.ts install claude-code   # install the Mira skill (Claude Code / Codex)
 bun build --compile src/cli.ts --outfile mira   # single binary for cron
 ```
 
@@ -38,20 +38,20 @@ Either way you can then build it yourself and register it everywhere:
 
 ```bash
 bun run compile                 # -> ./mira   (or `bun run dist` for all platforms)
-./mira install claude-code      # writes/merges project .mcp.json  (prints user-scope cmd too)
-./mira install codex            # appends [mcp_servers.mira] to ~/.codex/config.toml
+./mira install claude-code      # write the Mira skill to .claude/skills/mira/ (--user for ~/.claude)
+./mira install codex            # write the Mira skill to .codex/skills/mira/  (--user for ~/.codex)
 ./mira install cron | crontab - # the only clock: 5-min sweep + 3 briefs + weekly
 ```
 
-All three point at **one binary and one workspace** (`~/.mira/workspace`), so the
+All of them point at **one binary and one workspace** (`~/.mira/workspace`), so the
 SQLite truth source is shared and exactly-once holds across every brain + cron.
 
-- **Claude Code** connects over MCP: `mira mcp` (stdio). `install claude-code`
-  drops `.mcp.json`; for a global install run the printed
-  `claude mcp add mira --scope user -- mira mcp --workspace ~/.mira/workspace`.
-- **Codex** can either shell out to the `mira` CLI (the contract — see
-  [`AGENTS.md`](./AGENTS.md)) or connect to the same MCP server via
-  `install codex`.
+- **Both brains drive the `mira` CLI** — the contract (see [`AGENTS.md`](./AGENTS.md)).
+  `install claude-code`/`install codex` drop the **same** [`SKILL.md`](https://developers.openai.com/codex/skills)
+  (the open Agent Skills standard) into the agent's skills directory, so it picks
+  Mira up by description and knows how to sequence the commands. Default scope is
+  the project (`.claude/skills/` · `.codex/skills/`); add `--user` to install
+  globally (`~/.claude/skills/` · `$CODEX_HOME/skills/`).
 
 ### Secondary path — npm / bunx (Bun-only)
 
@@ -61,16 +61,18 @@ The package is **`mira-copilot`** and is **Bun-only** — it uses `bun:sqlite`, 
 
 ```bash
 # one-shot, no install:
-bunx mira-copilot mcp --workspace ~/.mira/workspace
+bunx mira-copilot help
 
 # or install globally, then `mira …` is on PATH:
 bun add -g mira-copilot
-mira install claude-code --via bunx     # writes config that calls `bunx mira-copilot mcp`
-mira install codex       --via global   # or --via global to call the `mira` on PATH
+mira install claude-code --user          # write the skill to ~/.claude/skills/mira/
+mira install codex       --user          # write the skill to $CODEX_HOME/skills/mira/
 mira install cron        --via global | crontab -
 ```
 
-`mira install … --via <binary|bunx|global>` picks how the generated config
+The skill assumes `mira` is on PATH (true after `bun add -g` or the binary
+install); if it isn't, the skill falls back to `bunx mira-copilot …`. For cron,
+`mira install cron --via <binary|bunx|global>` picks how the emitted crontab
 launches Mira: `binary` (absolute path to the compiled file, the default),
 `bunx` (`bunx mira-copilot …`), or `global` (the `mira` shim from `bun add -g`).
 
@@ -82,7 +84,7 @@ published to npm.
 
 ```
 ① clock   OS cron  →  mira sweep / mira brief   (one-shot, no daemon)
-② brain   Claude Code (MCP) │ Codex (CLI) │ pure cron (no agent)   — pluggable
+② brain   Claude Code (skill→CLI) │ Codex (skill→CLI) │ pure cron (no agent)   — pluggable
 ③ core    recurrence resolver · occurrence materialization · idempotent claim
           delivery ports (email/stdout/…) · read-models · CRUD
                                    ↓
@@ -98,7 +100,8 @@ published to npm.
 - `src/brief.ts` — daily/weekly HTML+text brief, with delivery-backlog alerts.
 - `src/import.ts` — `import-v1` from `data/lifework.db`.
 - `src/doctor.ts` — config/channel/backlog self-check.
-- `src/cli.ts` — the contract. `src/mcp.ts` — MCP SDK server wrapping the same core.
+- `src/cli.ts` — the contract (every capability is one `mira` command).
+- `src/skill.ts` — the canonical `SKILL.md`, baked into the binary; `mira install <agent>` writes it.
 
 ## Exactly-once
 
@@ -146,7 +149,7 @@ send-time:
 Two guarantees make this robust against the credential leaking into a reading
 agent's context:
 
-1. **Redacted output.** `config get`/`config set`/`config list` (CLI and MCP)
+1. **Redacted output.** `config get`/`config set`/`config list`
    mask literal secret fields as `***`. References (`file:`/`env:`) stay visible
    — they are pointers, not secrets. Triggering a send never surfaces the value:
    it is resolved inside the Mira process and never echoed.
