@@ -1,0 +1,43 @@
+{
+  "name": "mira-copilot",
+  "version": "2.0.0",
+  "description": "Family-first one-person-company operating copilot — daemonless reminder loop over SQLite (Bun-only)",
+  "type": "module",
+  "module": "src/cli.ts",
+  "bin": {
+    "mira": "src/cli.ts",
+    "mira-copilot": "src/cli.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "AGENTS.md",
+    "install.sh",
+    "install-local.sh"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["mcp", "reminders", "cli", "bun", "sqlite", "claude-code", "codex", "copilot"],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "compile": "bun build --compile src/cli.ts --outfile mira",
+    "dist": "bun run dist:linux-x64 && bun run dist:linux-arm64 && bun run dist:darwin-arm64 && bun run dist:darwin-x64",
+    "dist:linux-x64": "bun build --compile --target=bun-linux-x64 src/cli.ts --outfile dist/mira-linux-x64",
+    "dist:linux-arm64": "bun build --compile --target=bun-linux-arm64 src/cli.ts --outfile dist/mira-linux-arm64",
+    "dist:darwin-arm64": "bun build --compile --target=bun-darwin-arm64 src/cli.ts --outfile dist/mira-darwin-arm64",
+    "dist:darwin-x64": "bun build --compile --target=bun-darwin-x64 src/cli.ts --outfile dist/mira-darwin-x64"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "nodemailer": "^6.9.0"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^6.4.0",
+    "@types/bun": "latest"
+  }
+}

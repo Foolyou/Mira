@@ -1,0 +1,60 @@
+name: release
+
+# Ships BOTH distribution forms on a v2.* tag:
+#   1. self-contained binaries (primary) -> attached to the GitHub Release
+#   2. npm package mira-copilot (secondary, Bun-only) -> npm registry
+on:
+  push:
+    tags:
+      - "v2.*"
+
+permissions:
+  contents: write # create/update the GitHub Release + upload assets
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit
+      - run: bun test
+
+  binaries:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Cross-compile all targets
+        run: bun run dist
+      - name: Attach binaries to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/mira-*
+          fail_on_unmatched_files: true
+
+  npm:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - run: bun install --frozen-lockfile
+      # The package is Bun-only (bun:sqlite); npm just hosts the files.
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
