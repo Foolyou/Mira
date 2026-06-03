@@ -5,9 +5,9 @@
 // same SKILL.md for every agent (the open Agent Skills standard), written from
 // the string baked into the binary.
 import { homedir } from "os";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 import { writeFileSync, mkdirSync } from "fs";
-import { SKILL_MD } from "./skill.ts";
+import { skillMarkdown } from "./skill.ts";
 
 // The npm package name (secondary path). `bunx <PKG> <command>` runs the CLI.
 export const NPM_PKG = "mira-copilot";
@@ -36,6 +36,10 @@ function shell(t: InstallTarget, ...rest: string[]): string {
 // The brains Mira can install its skill into, and the scope to write it at.
 export type SkillAgent = "claude-code" | "codex";
 export type SkillScope = "project" | "user";
+export interface SkillInstallOptions {
+  cwd?: string;
+  workspace?: string;
+}
 
 // Where each agent discovers a skill named "mira". Project scope is a dir under
 // the current repo/cwd; user scope is global (Codex honors $CODEX_HOME). Both
@@ -51,15 +55,29 @@ function skillDir(agent: SkillAgent, scope: SkillScope, cwd: string): string {
   return join(root, "skills", "mira");
 }
 
+export function defaultSkillWorkspace(scope: SkillScope, cwd = process.cwd()): string {
+  return scope === "user"
+    ? join(homedir(), ".mira", "workspace")
+    : join(cwd, ".mira", "workspace");
+}
+
+function normalizeWorkspace(workspace: string, cwd: string): string {
+  return workspace.startsWith("~")
+    ? join(homedir(), workspace.slice(1))
+    : resolve(cwd, workspace);
+}
+
 // Install the Mira skill for one agent. Writes the canonical SKILL.md (baked
 // into the binary) so the agent picks Mira up implicitly by description and can
 // drive the CLI. Overwrites an existing copy so re-running keeps it current.
-export function installSkill(agent: SkillAgent, scope: SkillScope, cwd = process.cwd()) {
+export function installSkill(agent: SkillAgent, scope: SkillScope, opts: SkillInstallOptions = {}) {
+  const cwd = opts.cwd ?? process.cwd();
   const dir = skillDir(agent, scope, cwd);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "SKILL.md");
-  writeFileSync(file, SKILL_MD);
-  return { agent, scope, wrote: file };
+  const workspace = normalizeWorkspace(opts.workspace ?? defaultSkillWorkspace(scope, cwd), cwd);
+  writeFileSync(file, skillMarkdown(workspace));
+  return { agent, scope, workspace, wrote: file };
 }
 
 // Cron: return the crontab lines (we print, never auto-overwrite the user's

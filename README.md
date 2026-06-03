@@ -9,7 +9,7 @@ only state is one SQLite file.
 
 ```bash
 bun install
-bun test                       # 24 tests: idempotency, recurrence, modes, retry, migration
+bun test                       # idempotency, recurrence, modes, retry, migration
 bun run src/cli.ts help        # CLI (the contract)
 bun run src/cli.ts install claude-code   # install the Mira skill (Claude Code / Codex)
 bun build --compile src/cli.ts --outfile mira   # single binary for cron
@@ -17,6 +17,12 @@ bun build --compile src/cli.ts --outfile mira   # single binary for cron
 
 No build step is required to run; `--compile` only exists to ship a deployment
 binary as a fallback.
+
+By default, Mira stores its SQLite workspace under the current working directory:
+`./.mira/workspace`. `--workspace <dir>` and `MIRA_WORKSPACE` override that. A
+project skill installed with `mira install claude-code|codex` binds to that
+project-local workspace; `--user` binds the skill to `~/.mira/workspace`, and an
+explicit `--workspace` during install wins over both defaults.
 
 ## Install (single binary — the recommended form)
 
@@ -40,18 +46,21 @@ Either way you can then build it yourself and register it everywhere:
 bun run compile                 # -> ./mira   (or `bun run dist` for all platforms)
 ./mira install claude-code      # write the Mira skill to .claude/skills/mira/ (--user for ~/.claude)
 ./mira install codex            # write the Mira skill to .codex/skills/mira/  (--user for ~/.codex)
-./mira install cron | crontab - # the only clock: 5-min sweep + 3 briefs + weekly
+./mira install cron --workspace ~/.mira/workspace | crontab - # the only clock
 ```
 
-All of them point at **one binary and one workspace** (`~/.mira/workspace`), so the
-SQLite truth source is shared and exactly-once holds across every brain + cron.
+All of them should point at **one binary and one workspace**, so the SQLite truth
+source is shared and exactly-once holds across every brain + cron.
 
 - **Both brains drive the `mira` CLI** — the contract (see [`AGENTS.md`](./AGENTS.md)).
   `install claude-code`/`install codex` drop the **same** [`SKILL.md`](https://developers.openai.com/codex/skills)
   (the open Agent Skills standard) into the agent's skills directory, so it picks
   Mira up by description and knows how to sequence the commands. Default scope is
-  the project (`.claude/skills/` · `.codex/skills/`); add `--user` to install
-  globally (`~/.claude/skills/` · `$CODEX_HOME/skills/`).
+  the project (`.claude/skills/` · `.codex/skills/`) and binds to
+  `./.mira/workspace`; add `--user` to install globally
+  (`~/.claude/skills/` · `$CODEX_HOME/skills/`) and bind to `~/.mira/workspace`.
+  Add `--workspace <dir>` during install to bind the skill to a different
+  workspace.
 
 ### Secondary path — npm / bunx (Bun-only)
 
@@ -67,7 +76,7 @@ bunx mira-copilot help
 bun add -g mira-copilot
 mira install claude-code --user          # write the skill to ~/.claude/skills/mira/
 mira install codex       --user          # write the skill to $CODEX_HOME/skills/mira/
-mira install cron        --via global | crontab -
+mira install cron        --via global --workspace ~/.mira/workspace | crontab -
 ```
 
 The skill assumes `mira` is on PATH (true after `bun add -g` or the binary
@@ -75,6 +84,8 @@ install); if it isn't, the skill falls back to `bunx mira-copilot …`. For cron
 `mira install cron --via <binary|bunx|global>` picks how the emitted crontab
 launches Mira: `binary` (absolute path to the compiled file, the default),
 `bunx` (`bunx mira-copilot …`), or `global` (the `mira` shim from `bun add -g`).
+Pass `--workspace` for cron unless `MIRA_WORKSPACE` is already set in the cron
+environment.
 
 Releases ship both forms from one CI run (`.github/workflows/release.yml`):
 cross-compiled binaries attached to the GitHub Release **and** `mira-copilot`
@@ -126,6 +137,16 @@ one DB file, both yield exactly one `delivered` row.
 Channel config lives only in the workspace DB, never in the agent, so Claude
 Code and Codex deliver byte-for-byte identically.
 
+Agents can also send explicit rich-text email through the same configured
+channel when the user asks for it:
+
+```bash
+mira mail send --subject "Update" --html-file /tmp/message.html --text-file /tmp/message.txt
+```
+
+This uses `channel.email` by default, including its configured recipient, so SMTP
+credentials and addressing policy stay inside Mira.
+
 ## Configure email (iCloud)
 
 ```bash
@@ -165,9 +186,9 @@ exposure path (a routine command echoing the secret).
 
 ## Cron
 
-`mira install cron | crontab -` emits the schedule (with absolute paths for this
-machine): a `*/5` backstop sweep plus three daily briefs and a Sunday weekly.
-Failures retry on the next tick.
+`mira install cron --workspace <dir> | crontab -` emits the schedule (with
+absolute paths for this machine): a `*/5` backstop sweep plus three daily briefs
+and a Sunday weekly. Failures retry on the next tick.
 
 ## Migrate real v1 data
 

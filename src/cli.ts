@@ -7,10 +7,11 @@ import { redactConfigValue, redactConfigMap } from "./secret.ts";
 import { installSkill, cronLines, NPM_PKG, type Invoker } from "./install.ts";
 import * as core from "./core.ts";
 import { sweep, deliverAck } from "./sweep.ts";
-import { sendTest } from "./delivery/index.ts";
+import { sendMail, sendTest } from "./delivery/index.ts";
 import { sendBrief, buildBrief } from "./brief.ts";
 import { importV1 } from "./import.ts";
 import { doctor, verifyImport } from "./doctor.ts";
+import { readFileSync } from "fs";
 
 interface Parsed {
   _: string[];
@@ -63,6 +64,14 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
+function flagText(flags: Record<string, string | boolean>, inlineKey: string, fileKey: string): string | undefined {
+  const inline = str(flags[inlineKey]);
+  const file = str(flags[fileKey]);
+  if (inline && file) fail(`use either --${inlineKey} or --${fileKey}, not both`);
+  if (file) return readFileSync(file, "utf8");
+  return inline;
+}
+
 const HELP = `mira — daemonless personal operating copilot
 
 USAGE
@@ -85,26 +94,28 @@ DELIVERY LOOP (the heart)
   brief [--send] [--weekly] [--day YYYY-MM-DD]
   send-test [--channel <c>]                            actually deliver a test message (default channel)
   deliver-ack <log_id> --channel <c> [--by name]
+  mail send --subject <s> [--text t|--text-file path] [--html h|--html-file path] [--channel email]
 
 READ MODELS
   dashboard [--day YYYY-MM-DD] | search <q> | timeline [--days N] | counts
   context [--company N --project N] | meeting-prep --company N
 
 KNOWLEDGE
-  company add <name> [--type t --summary s]
-  project add <name> [--company N --summary s]
-  note add <content> [--company N --kind k]
-  capture <text>
+  company add <name> [--type t --summary s] | company list [--type t --limit N]
+  project add <name> [--company N --summary s] | project list [--company N --status s --limit N]
+  note add <content> [--company N --project N --kind k] | note list [--company N --project N --kind k --limit N]
+  capture <text> | capture list [--kind k --source s --status s --limit N]
 
 ADMIN
   config get <key> | config set <key> <value> | config list
   import-v1 --from <lifework.db> [--force]
   doctor [--check-channel]
-  install claude-code|codex [--user]                 install the Mira skill (project, or --user/global)
+  install claude-code|codex [--user] [--workspace dir] install the Mira skill (project, or --user/global)
   install cron [--via binary|bunx|global] [--bin path --workspace dir] | crontab -
 
 GLOBAL FLAGS
   --workspace <dir> | --demo | --db <path>
+  default workspace: <current-working-directory>/.mira/workspace
 `;
 
 async function main() {
@@ -121,7 +132,7 @@ async function main() {
   if (cmd === "install") {
     const target = _[1];
     if (target === "claude-code" || target === "codex") {
-      out(installSkill(target, flags.user ? "user" : "project"));
+      out(installSkill(target, flags.user ? "user" : "project", { workspace: str(flags.workspace) }));
     } else if (target === "cron") {
       const workspace = str(flags.workspace) ?? resolveWorkspace();
       const via = str(flags.via) ?? (/[\\/]bun(\.exe)?$/.test(process.execPath) ? "global" : "binary");
@@ -242,6 +253,16 @@ async function main() {
         break;
       }
       case "send-test": out(await sendTest(db, { channel: str(flags.channel) })); break;
+      case "mail": {
+        if (_[1] !== "send") fail("mail send --subject <s> [--text/--text-file] [--html/--html-file]");
+        out(await sendMail(db, {
+          subject: str(flags.subject) ?? "",
+          text: flagText(flags, "text", "text-file"),
+          html: flagText(flags, "html", "html-file"),
+          channel: str(flags.channel),
+        }));
+        break;
+      }
       case "deliver-ack": {
         const id = num(_[1]);
         const channel = str(flags.channel);
@@ -270,21 +291,64 @@ async function main() {
 
       // -------------------- knowledge --------------------
       case "company": {
-        if (_[1] === "add") out(core.addCompany(db, _[2], str(flags.type), str(flags.summary)));
-        else fail("only: company add <name>");
+        if (_[1] === "add") {
+          const name = _[2];
+          if (!name) fail("company add needs a name");
+          out(core.addCompany(db, name, str(flags.type), str(flags.summary)));
+        } else if (_[1] === "list") {
+          out(core.listCompanies(db, { type: str(flags.type), limit: num(flags.limit) }));
+        } else fail("only: company add <name> | company list");
         break;
       }
       case "project": {
-        if (_[1] === "add") out(core.addProject(db, _[2], num(flags.company), str(flags.summary)));
-        else fail("only: project add <name>");
+        if (_[1] === "add") {
+          const name = _[2];
+          if (!name) fail("project add needs a name");
+          out(core.addProject(db, name, num(flags.company), str(flags.summary)));
+        } else if (_[1] === "list") {
+          out(core.listProjects(db, {
+            company_id: num(flags.company),
+            status: str(flags.status),
+            limit: num(flags.limit),
+          }));
+        } else fail("only: project add <name> | project list");
         break;
       }
       case "note": {
-        if (_[1] === "add") out(core.addNote(db, _[2], { company_id: num(flags.company), kind: str(flags.kind), tags: str(flags.tags) }));
-        else fail("only: note add <content>");
+        if (_[1] === "add") {
+          const content = _[2];
+          if (!content) fail("note add needs content");
+          out(core.addNote(db, content, {
+            company_id: num(flags.company),
+            project_id: num(flags.project),
+            kind: str(flags.kind),
+            tags: str(flags.tags),
+          }));
+        } else if (_[1] === "list") {
+          out(core.listNotes(db, {
+            company_id: num(flags.company),
+            project_id: num(flags.project),
+            kind: str(flags.kind),
+            limit: num(flags.limit),
+          }));
+        } else fail("only: note add <content> | note list");
         break;
       }
-      case "capture": out(core.capture(db, _[1])); break;
+      case "capture": {
+        if (_[1] === "list") {
+          out(core.listCaptures(db, {
+            kind: str(flags.kind),
+            source: str(flags.source),
+            status: str(flags.status),
+            limit: num(flags.limit),
+          }));
+        } else {
+          const text = _[1];
+          if (!text) fail("capture needs text");
+          out(core.capture(db, text, str(flags.kind), str(flags.source)));
+        }
+        break;
+      }
 
       // -------------------- admin --------------------
       case "config": {

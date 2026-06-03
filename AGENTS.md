@@ -5,8 +5,10 @@ capability is reachable as `mira <command>`. You (a shell agent) drive it the
 same way cron and Claude Code do, against the **same shared workspace** so
 nothing drifts.
 
-Always pass `--workspace ~/.mira/workspace` (or rely on `MIRA_WORKSPACE`) so you
-read/write the one true SQLite file.
+Default workspace resolution is project-local: `<current-working-directory>/.mira/workspace`.
+When a skill or cron entry has a known workspace, always pass that explicit
+`--workspace <dir>` (or rely on `MIRA_WORKSPACE`) so you read/write the one true
+SQLite file. `mira install ... --user` uses `~/.mira/workspace`.
 
 ## Capture & tasks
 ```
@@ -33,14 +35,18 @@ mira sweep                           # fire due reminders (cron also does this e
 mira deliver-ack <log_id> --channel email --by codex   # B2: confirm YOU delivered it
 mira brief [--weekly] [--send]
 mira send-test [--channel email]     # actually deliver a test message (real send, not a config check)
+mira mail send --subject "主题" --html-file /tmp/msg.html --text-file /tmp/msg.txt
 ```
 If `delivery.mode=agent`, `mira sweep` prints claimed payloads as JSON and waits
 for your `deliver-ack`. Read the `payloads[].log_id` and ack each after sending.
+Use `mail send` for Agent-authored rich-text email; it sends to the configured
+`channel.email.to` recipient and keeps SMTP secrets inside Mira.
 
 ## Read models
 ```
 mira dashboard | mira timeline --days 14 | mira search "<q>"
 mira context --company <id> | mira meeting-prep --company <id> | mira counts
+mira company list | mira project list [--company <id>] | mira note list [--company <id>]
 ```
 
 ## Health

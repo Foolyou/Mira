@@ -38,10 +38,13 @@ Codex alike.
   (`UPDATE … SET state='claimed' … RETURNING` inside `BEGIN IMMEDIATE`, WAL +
   busy_timeout). Delivered rows are never re-claimed; failures retry next sweep
   until `delivery.max_attempts`, then surface as backlog in `doctor`/`brief`.
-- **Workspace** (default `~/.mira/workspace`) is resolved via, in order: the
-  `--workspace` flag, `MIRA_WORKSPACE`, then the default. All brains + cron point
-  at one workspace so the SQLite truth source is shared and exactly-once holds
-  across them.
+- **Workspace** defaults to the current working directory's `.mira/workspace`
+  and is resolved via, in order: the `--workspace` flag, `MIRA_WORKSPACE`, then
+  that cwd-local default. Project skills bind to the installing cwd's
+  `.mira/workspace`; `mira install ... --user` binds to `~/.mira/workspace`;
+  an install-time `--workspace` overrides both. Cron should always be installed
+  with an explicit workspace so the SQLite truth source is shared and
+  exactly-once holds across brains + cron.
 - **Migrations stay additive and ordered** in `db.ts`, guarded so re-runs are
   no-ops, with `PRAGMA user_version` as the schema baseline. Bumping the schema
   means updating the migration test.

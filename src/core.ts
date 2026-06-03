@@ -316,6 +316,26 @@ export function meetingPrep(db: Database, companyId: number) {
 }
 
 // ---------------------- knowledge CRUD (minimal) --------------------------
+export interface CompanyFilter {
+  type?: string;
+  limit?: number;
+}
+
+export function listCompanies(db: Database, f: CompanyFilter = {}) {
+  const where: string[] = [];
+  const vals: any[] = [];
+  if (f.type) {
+    where.push("type = ?");
+    vals.push(f.type);
+  }
+  const sql =
+    "SELECT * FROM companies" +
+    (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
+    " ORDER BY name ASC" +
+    (f.limit ? ` LIMIT ${Number(f.limit)}` : "");
+  return db.query(sql).all(...vals);
+}
+
 export function addCompany(db: Database, name: string, type = "client", summary = "") {
   const info = db
     .query("INSERT INTO companies(name,type,summary,created_at) VALUES(?,?,?,?)")
@@ -323,11 +343,71 @@ export function addCompany(db: Database, name: string, type = "client", summary 
   return db.query("SELECT * FROM companies WHERE id=?").get(Number(info.lastInsertRowid));
 }
 
+export interface ProjectFilter {
+  company_id?: number;
+  status?: string;
+  limit?: number;
+}
+
+export function listProjects(db: Database, f: ProjectFilter = {}) {
+  const where: string[] = [];
+  const vals: any[] = [];
+  if (f.company_id != null) {
+    where.push("p.company_id = ?");
+    vals.push(f.company_id);
+  }
+  if (f.status) {
+    where.push("p.status = ?");
+    vals.push(f.status);
+  }
+  const sql =
+    `SELECT p.*, c.name AS company_name
+       FROM projects p
+       LEFT JOIN companies c ON c.id = p.company_id` +
+    (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
+    " ORDER BY c.name ASC, p.name ASC" +
+    (f.limit ? ` LIMIT ${Number(f.limit)}` : "");
+  return db.query(sql).all(...vals);
+}
+
 export function addProject(db: Database, name: string, companyId?: number | null, summary = "") {
   const info = db
     .query("INSERT INTO projects(company_id,name,summary,created_at) VALUES(?,?,?,?)")
     .run(companyId ?? null, name, summary, nowTs());
   return db.query("SELECT * FROM projects WHERE id=?").get(Number(info.lastInsertRowid));
+}
+
+export interface NoteFilter {
+  company_id?: number;
+  project_id?: number;
+  kind?: string;
+  limit?: number;
+}
+
+export function listNotes(db: Database, f: NoteFilter = {}) {
+  const where: string[] = [];
+  const vals: any[] = [];
+  if (f.company_id != null) {
+    where.push("n.company_id = ?");
+    vals.push(f.company_id);
+  }
+  if (f.project_id != null) {
+    where.push("n.project_id = ?");
+    vals.push(f.project_id);
+  }
+  if (f.kind) {
+    where.push("n.kind = ?");
+    vals.push(f.kind);
+  }
+  const sql =
+    `SELECT n.*, c.name AS company_name, p.name AS project_name
+       FROM notes n
+       LEFT JOIN companies c ON c.id = n.company_id
+       LEFT JOIN projects p ON p.id = n.project_id` +
+    (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
+    " ORDER BY n.created_at DESC, n.id DESC" +
+    (f.limit ? ` LIMIT ${Number(f.limit)}` : "");
+  return db.query(sql).all(...vals);
 }
 
 export function addNote(
@@ -348,6 +428,36 @@ export function addNote(
       nowTs(),
     );
   return db.query("SELECT * FROM notes WHERE id=?").get(Number(info.lastInsertRowid));
+}
+
+export interface CaptureFilter {
+  kind?: string;
+  source?: string;
+  status?: string;
+  limit?: number;
+}
+
+export function listCaptures(db: Database, f: CaptureFilter = {}) {
+  const where: string[] = [];
+  const vals: any[] = [];
+  if (f.kind) {
+    where.push("kind = ?");
+    vals.push(f.kind);
+  }
+  if (f.source) {
+    where.push("source = ?");
+    vals.push(f.source);
+  }
+  if (f.status) {
+    where.push("classification_status = ?");
+    vals.push(f.status);
+  }
+  const sql =
+    "SELECT * FROM captures" +
+    (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
+    " ORDER BY created_at DESC, id DESC" +
+    (f.limit ? ` LIMIT ${Number(f.limit)}` : "");
+  return db.query(sql).all(...vals);
 }
 
 export function capture(db: Database, rawText: string, kind = "inbox", source = "manual") {

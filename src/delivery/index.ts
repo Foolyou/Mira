@@ -19,6 +19,13 @@ export interface Channel {
   send(payload: Payload): Promise<void>;
 }
 
+export interface SendMailOptions {
+  subject: string;
+  text?: string;
+  html?: string;
+  channel?: string;
+}
+
 // Resolve a channel by name. Unknown names fall back to stdout so a
 // misconfiguration degrades to "printed" rather than "silently dropped".
 export function getChannel(db: Database, name: string): Channel {
@@ -53,4 +60,39 @@ export async function sendTest(
   };
   await ch.send(payload);
   return { sent: true, channel: name, payload };
+}
+
+export async function sendMail(
+  db: Database,
+  opts: SendMailOptions,
+): Promise<{ sent: boolean; channel: string; payload: Payload }> {
+  const subject = opts.subject.trim();
+  if (!subject) throw new Error("mail send needs --subject <subject>");
+  if (!opts.text && !opts.html) throw new Error("mail send needs --text/--text-file or --html/--html-file");
+  const name = opts.channel || "email";
+  const payload: Payload = {
+    subject,
+    text: opts.text || htmlToText(opts.html || ""),
+    ...(opts.html ? { html: opts.html } : {}),
+  };
+  await getChannel(db, name).send(payload);
+  return { sent: true, channel: name, payload };
+}
+
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }

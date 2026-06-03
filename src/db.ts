@@ -1,7 +1,6 @@
 // db.ts — the single source of truth: workspace resolution, schema, additive
 // migrations, and config. Everything else in Mira opens its DB through here.
 import { Database } from "bun:sqlite";
-import { homedir } from "os";
 import { join } from "path";
 import { mkdirSync } from "fs";
 
@@ -9,7 +8,7 @@ export const SCHEMA_VERSION = 1;
 
 // ---------------------------------------------------------------------------
 // Workspace / path resolution. Order (highest precedence first):
-//   per-call override  >  MIRA_WORKSPACE env  >  default ~/.mira/workspace
+//   per-call override  >  MIRA_WORKSPACE env  >  default <cwd>/.mira/workspace
 // Granular MIRA_DB_PATH / MIRA_DEMO_DB_PATH override the individual db file
 // (used by Docker and tests). The CLI flips the override per invocation.
 // ---------------------------------------------------------------------------
@@ -23,7 +22,7 @@ export function resolveWorkspace(): string {
   return (
     workspaceOverride ??
     process.env.MIRA_WORKSPACE ??
-    join(homedir(), ".mira", "workspace")
+    join(process.cwd(), ".mira", "workspace")
   );
 }
 

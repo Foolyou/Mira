@@ -17,7 +17,30 @@ export const SKILL_DESCRIPTION =
   "what is overdue/due-today. All state is one shared SQLite workspace; every command prints JSON. " +
   "Do NOT use for unrelated coding tasks or for editing the SQLite file directly.";
 
-export const SKILL_MD = `---
+function workspaceGuidance(workspace?: string): string {
+  if (workspace) {
+    return `## Workspace binding
+
+Use this exact workspace for every Mira command unless the user explicitly asks
+for another one:
+
+\`\`\`bash
+--workspace ${workspace}
+\`\`\`
+
+This keeps all agent calls, cron jobs, and ad-hoc CLI calls on the same SQLite
+truth source even when the agent's current working directory changes.`;
+  }
+
+  return `## Workspace binding
+
+By default Mira uses the current working directory's \`.mira/workspace\`.
+Prefer passing \`--workspace <dir>\` explicitly when a shared workspace is known,
+so later calls do not drift if the current directory changes.`;
+}
+
+export function skillMarkdown(workspace?: string): string {
+  return `---
 name: ${SKILL_NAME}
 description: ${SKILL_DESCRIPTION}
 ---
@@ -30,13 +53,16 @@ JSON to stdout. You drive it the exact same way cron and the other brains do,
 against **one shared SQLite workspace**, so nothing drifts and reminders fire
 exactly once.
 
+${workspaceGuidance(workspace)}
+
 ## Golden rules
 
 1. **Never edit the SQLite file directly.** Go through \`mira\`. The atomic
    claim + \`UNIQUE(spec_id, occurrence_key)\` is what guarantees exactly-once;
    raw writes break it.
-2. **One workspace.** Pass \`--workspace <dir>\` (or rely on \`MIRA_WORKSPACE\`)
-   so you read/write the one true DB. Default is \`~/.mira/workspace\`.
+2. **One workspace.** Pass an explicit \`--workspace <dir>\` with every \`mira\`
+   command when one is listed above (or rely on \`MIRA_WORKSPACE\`) so you
+   read/write the one true DB.
 3. **\`mira help\` is authoritative.** Run it for the full, current command
    surface and flags rather than guessing. This skill covers *when* and *in what
    order*; \`mira help\` covers *what exists*.
@@ -87,6 +113,20 @@ Then summarize in plain language — open items, recent notes, what's due.
   ack what you didn't.
 - \`mira brief [--weekly] [--send]\` builds (and optionally sends) the brief.
 
+## Agent-authored email
+
+When the user asks you to send a rich-text update, or a Mira workflow needs a
+human-readable message that is not a reminder/brief, use Mira's dedicated mail
+command so SMTP credentials stay inside the workspace config:
+
+\`\`\`bash
+mira mail send --workspace <dir> --subject "Subject" --html-file /path/to/message.html --text-file /path/to/message.txt
+\`\`\`
+
+Prefer \`--html-file\`/\`--text-file\` for substantial content. The command uses
+\`channel.email\`'s configured recipient by default; do not ask for or print SMTP
+secrets. Use \`--channel stdout\` only for local dry/demo checks.
+
 ## Health & backlog
 
 \`mira doctor [--check-channel]\` self-checks config, channel login, and delivery
@@ -107,3 +147,6 @@ reading config never surfaces the value. Don't try to print or exfiltrate it.
 Most setups expose \`mira\` directly. If not, the Bun package equivalent is
 \`bunx mira-copilot <command>\` (Bun-only — \`npx\`/\`node\` won't run it).
 `;
+}
+
+export const SKILL_MD = skillMarkdown();
