@@ -48,7 +48,7 @@ Next:
   mira doctor
   mira import-v1 --from /path/to/lifework.db      # bring v1 data over
   mira install claude-code --user                  # install the Mira skill (~/.claude/skills/mira)
-  mira install codex       --user                  # install the Mira skill ($CODEX_HOME/skills/mira)
+  mira install codex       --user                  # install the Mira skill (\$CODEX_HOME/skills/mira)
   mira install cron | crontab -                    # the only clock (5-min sweep + briefs)
 
 Email delivery (iCloud):

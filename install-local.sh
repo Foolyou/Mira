@@ -40,7 +40,7 @@ Next (all point at one binary + one workspace, so exactly-once holds):
   $BIN_DIR/mira doctor
   $BIN_DIR/mira import-v1 --from /path/to/lifework.db   # bring v1 data over
   $BIN_DIR/mira install claude-code --user               # install the Mira skill (~/.claude/skills/mira)
-  $BIN_DIR/mira install codex       --user               # install the Mira skill ($CODEX_HOME/skills/mira)
+  $BIN_DIR/mira install codex       --user               # install the Mira skill (\$CODEX_HOME/skills/mira)
   $BIN_DIR/mira install cron | crontab -                 # the only clock (5-min sweep + briefs)
 
 Email delivery (iCloud):
