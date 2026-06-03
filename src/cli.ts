@@ -2,9 +2,11 @@
 // cli.ts — the contract. Everything a reminder needs is reachable here so that
 // Claude Code (MCP) and Codex (shell) are automatically on equal footing.
 import { openDb, resolveWorkspace, configGet, configSet, configAll } from "./db.ts";
+import { redactConfigValue, redactConfigMap } from "./secret.ts";
 import { installClaudeCode, installCodex, cronLines, NPM_PKG, type Invoker } from "./install.ts";
 import * as core from "./core.ts";
 import { sweep, deliverAck } from "./sweep.ts";
+import { sendTest } from "./delivery/index.ts";
 import { sendBrief, buildBrief } from "./brief.ts";
 import { importV1 } from "./import.ts";
 import { doctor, verifyImport } from "./doctor.ts";
@@ -80,6 +82,7 @@ REMINDERS
 DELIVERY LOOP (the heart)
   sweep [--now "YYYY-MM-DD HH:MM"] [--dry-run]
   brief [--send] [--weekly] [--day YYYY-MM-DD]
+  send-test [--channel <c>]                            actually deliver a test message (default channel)
   deliver-ack <log_id> --channel <c> [--by name]
 
 READ MODELS
@@ -244,6 +247,7 @@ async function main() {
         }
         break;
       }
+      case "send-test": out(await sendTest(db, { channel: str(flags.channel) })); break;
       case "deliver-ack": {
         const id = num(_[1]);
         const channel = str(flags.channel);
@@ -291,9 +295,9 @@ async function main() {
       // -------------------- admin --------------------
       case "config": {
         const sub = _[1];
-        if (sub === "get") out({ key: _[2], value: configGet(db, _[2]) });
-        else if (sub === "set") { configSet(db, _[2], _.slice(3).join(" ")); out({ key: _[2], value: configGet(db, _[2]) }); }
-        else if (sub === "list") out(configAll(db));
+        if (sub === "get") out({ key: _[2], value: redactConfigValue(_[2], configGet(db, _[2])) });
+        else if (sub === "set") { configSet(db, _[2], _.slice(3).join(" ")); out({ key: _[2], value: redactConfigValue(_[2], configGet(db, _[2])) }); }
+        else if (sub === "list") out(redactConfigMap(configAll(db)));
         else fail("config get|set|list");
         break;
       }

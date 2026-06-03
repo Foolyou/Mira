@@ -9,6 +9,8 @@ import { openDb, setWorkspaceOverride, configGet, configSet } from "./db.ts";
 import * as core from "./core.ts";
 import { sweep, deliverAck } from "./sweep.ts";
 import { buildBrief } from "./brief.ts";
+import { sendTest } from "./delivery/index.ts";
+import { redactConfigValue } from "./secret.ts";
 import type { Database } from "bun:sqlite";
 
 // Per-call DB resolution. The server may be launched with --workspace; an
@@ -74,6 +76,10 @@ server.tool("brief", "Build the daily/weekly brief payload", {
   weekly: z.boolean().optional(), day: z.string().optional(), ...ctx,
 }, async (a) => ok(withDb(a, (db) => buildBrief(db, { weekly: a.weekly, day: a.day }))));
 
+server.tool("send_test", "Actually deliver a test message through a channel (default: configured default channel) — the real exercise that config check is not", {
+  channel: z.string().optional(), ...ctx,
+}, async (a) => ok(await withDbAsync(a, (db) => sendTest(db, { channel: a.channel }))));
+
 server.tool("dashboard", "Dashboard: overdue, due-today, recurring-today, family", {
   day: z.string().optional(), ...ctx,
 }, async (a) => ok(withDb(a, (db) => core.dashboard(db, a.day))));
@@ -99,11 +105,11 @@ server.tool("deliver_ack", "B2 callback: confirm an agent delivered a claimed pa
   log_id: z.number(), channel: z.string(), by: z.string().optional(), ...ctx,
 }, async (a) => ok(withDb(a, (db) => deliverAck(db, a.log_id, a.channel, a.by ?? "claude-code"))));
 
-server.tool("config_get", "Read a config value", { key: z.string(), ...ctx },
-  async (a) => ok(withDb(a, (db) => ({ key: a.key, value: configGet(db, a.key) }))));
+server.tool("config_get", "Read a config value (secret fields are redacted)", { key: z.string(), ...ctx },
+  async (a) => ok(withDb(a, (db) => ({ key: a.key, value: redactConfigValue(a.key, configGet(db, a.key)) }))));
 
-server.tool("config_set", "Write a config value", { key: z.string(), value: z.string(), ...ctx },
-  async (a) => ok(withDb(a, (db) => { configSet(db, a.key, a.value); return { key: a.key, value: configGet(db, a.key) }; })));
+server.tool("config_set", "Write a config value (secret fields are redacted in the echo)", { key: z.string(), value: z.string(), ...ctx },
+  async (a) => ok(withDb(a, (db) => { configSet(db, a.key, a.value); return { key: a.key, value: redactConfigValue(a.key, configGet(db, a.key)) }; })));
 
 // async variant of withDb for tools that await (sweep)
 async function withDbAsync<T>(args: { workspace?: string; demo?: boolean }, fn: (db: Database) => Promise<T>): Promise<T> {

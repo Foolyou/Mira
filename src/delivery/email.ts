@@ -7,6 +7,7 @@
 import type { Database } from "bun:sqlite";
 import type { Channel, Payload } from "./index.ts";
 import { configGet } from "../db.ts";
+import { resolveSecret } from "../secret.ts";
 
 interface EmailConfig {
   smtp_host: string;
@@ -38,7 +39,9 @@ export class EmailChannel implements Channel {
       smtp_host: host,
       smtp_port: port,
       user: c.user,
-      app_password: c.app_password,
+      // Supports a literal, `file:<path>`, or `env:<VAR>` — resolved here, used
+      // in-process only, never echoed back to any caller.
+      app_password: resolveSecret(String(c.app_password)),
       to: c.to,
       from: c.from || c.user,
     };

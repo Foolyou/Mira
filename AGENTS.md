@@ -32,6 +32,7 @@ mira sweep --dry-run                 # see what's due, deliver nothing
 mira sweep                           # fire due reminders (cron also does this every 5 min)
 mira deliver-ack <log_id> --channel email --by codex   # B2: confirm YOU delivered it
 mira brief [--weekly] [--send]
+mira send-test [--channel email]     # actually deliver a test message (real send, not a config check)
 ```
 If `delivery.mode=agent`, `mira sweep` prints claimed payloads as JSON and waits
 for your `deliver-ack`. Read the `payloads[].log_id` and ack each after sending.
@@ -44,7 +45,12 @@ mira context --company <id> | mira meeting-prep --company <id> | mira counts
 
 ## Health
 ```
-mira doctor [--check-channel]        # config / channel / delivery backlog
+mira doctor [--check-channel]        # config / channel / delivery backlog (login only, no send)
 ```
 
 All commands print JSON. Don't edit the SQLite file directly — go through `mira`.
+
+Secrets: `channel.*` config can store a credential as `file:<path>` or
+`env:<VAR>` instead of a literal; it is resolved in-process at send-time. `config
+get`/`set`/`list` redact literal secret fields as `***` (references stay
+visible), so reading config never surfaces the value.

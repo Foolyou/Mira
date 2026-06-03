@@ -127,9 +127,38 @@ Code and Codex deliver byte-for-byte identically.
 
 ```bash
 mira config set delivery.default_channel email
-mira config set channel.email '{"smtp_host":"smtp.mail.me.com","smtp_port":587,"user":"you@icloud.com","app_password":"xxxx-xxxx-xxxx-xxxx","to":"you@icloud.com","from":"you@icloud.com"}'
-mira doctor --check-channel
+mira config set channel.email '{"smtp_host":"smtp.mail.me.com","smtp_port":587,"user":"you@icloud.com","app_password":"file:~/.secrets/mira-smtp","to":"you@icloud.com","from":"you@icloud.com"}'
+mira doctor --check-channel        # verifies SMTP login (sends nothing)
+mira send-test                     # actually delivers a test message
 ```
+
+### Keeping the credential out of harm's way
+
+`app_password` accepts three forms — a literal, or a **reference** resolved at
+send-time:
+
+- `"file:~/.secrets/mira-smtp"` — read from a (chmod 600) file. The DB then holds
+  only the pointer, so the SQLite truth source and any backup of it carry no
+  secret.
+- `"env:MIRA_SMTP_PASSWORD"` — read from an environment variable.
+- a literal string — back-compat; discouraged.
+
+Two guarantees make this robust against the credential leaking into a reading
+agent's context:
+
+1. **Redacted output.** `config get`/`config set`/`config list` (CLI and MCP)
+   mask literal secret fields as `***`. References (`file:`/`env:`) stay visible
+   — they are pointers, not secrets. Triggering a send never surfaces the value:
+   it is resolved inside the Mira process and never echoed.
+2. **Resolution stays in-process.** `send-test`, `brief --send`, and the sweep
+   read the credential only to hand it to SMTP.
+
+Honest limit: a process running as your user (incl. an agent in a
+bypass-permissions session) can still read the file directly. The only hard wall
+is OS-level — put the secret in a file owned by a separate user and run the
+sending cron as that user, so your everyday user cannot read it. This is
+optional; the reference + redaction above already closes the *accidental*
+exposure path (a routine command echoing the secret).
 
 ## Cron
 
