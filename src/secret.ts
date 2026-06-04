@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 
 // Field names whose values are credentials. Matched case-insensitively against
 // the keys inside a channel config JSON blob.
-const SECRET_FIELD_RE = /(password|passwd|secret|token|api[_-]?key|app[_-]?pass)/i;
+const SECRET_FIELD_RE = /(password|passwd|secret|token|api[_-]?key|app[_-]?pass|webhook)/i;
 
 // A stored value that is itself just a pointer is not sensitive — show it.
 function isReference(value: string): boolean {

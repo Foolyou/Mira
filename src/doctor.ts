@@ -11,6 +11,7 @@ import {
 } from "./db.ts";
 import { deliveryAlerts } from "./brief.ts";
 import { EmailChannel } from "./delivery/email.ts";
+import { DiscordChannel } from "./delivery/discord.ts";
 
 export interface DoctorReport {
   ok: boolean;
@@ -54,6 +55,21 @@ export async function doctor(
           checks.push({ name: "email-connectivity", ok: true, detail: "SMTP verify ok" });
         } catch (e: any) {
           checks.push({ name: "email-connectivity", ok: false, detail: String(e?.message ?? e) });
+        }
+      }
+    } else if (channel === "discord") {
+      const raw = configGet(db, "channel.discord");
+      checks.push({
+        name: "discord-config",
+        ok: !!raw,
+        detail: raw ? "present" : "missing channel.discord (mira/both mode needs it)",
+      });
+      if (raw && opts.checkChannel) {
+        try {
+          await new DiscordChannel(db).verify();
+          checks.push({ name: "discord-connectivity", ok: true, detail: "webhook reachable" });
+        } catch (e: any) {
+          checks.push({ name: "discord-connectivity", ok: false, detail: String(e?.message ?? e) });
         }
       }
     } else if (channel === "stdout") {

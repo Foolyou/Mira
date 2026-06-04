@@ -29,14 +29,28 @@ for another one:
 \`\`\`
 
 This keeps all agent calls, cron jobs, and ad-hoc CLI calls on the same SQLite
-truth source even when the agent's current working directory changes.`;
+truth source even when the agent's current working directory changes. It was
+created at install time; if a command reports it is not initialized, run
+\`mira init --workspace ${workspace}\` once.`;
   }
 
   return `## Workspace binding
 
-By default Mira uses the current working directory's \`.mira/workspace\`.
-Prefer passing \`--workspace <dir>\` explicitly when a shared workspace is known,
-so later calls do not drift if the current directory changes.`;
+A Mira workspace is a \`.mira\` directory; there is **no global/home workspace**.
+By default every command works against \`<cwd>/.mira\`, and a workspace must be
+created explicitly — data commands error until it exists.
+
+**Before using Mira in a working directory, initialize it once:**
+
+\`\`\`bash
+mira init                 # creates ./.mira in the current directory
+\`\`\`
+
+Then either run subsequent commands from that same directory, or pass
+\`--workspace <dir>\` (or set \`MIRA_WORKSPACE\`) so calls don't drift to a
+different \`.mira\` when the working directory changes. Running from the wrong
+directory no longer silently creates a second, empty workspace — it errors and
+points you at \`mira init\`.`;
 }
 
 export function skillMarkdown(workspace?: string): string {
@@ -60,9 +74,12 @@ ${workspaceGuidance(workspace)}
 1. **Never edit the SQLite file directly.** Go through \`mira\`. The atomic
    claim + \`UNIQUE(spec_id, occurrence_key)\` is what guarantees exactly-once;
    raw writes break it.
-2. **One workspace.** Pass an explicit \`--workspace <dir>\` with every \`mira\`
-   command when one is listed above (or rely on \`MIRA_WORKSPACE\`) so you
-   read/write the one true DB.
+2. **Initialize, then stay on one workspace.** A workspace is a \`.mira\`
+   directory created by \`mira init\`; there is no global one. Pass an explicit
+   \`--workspace <dir>\` with every \`mira\` command when one is listed above (or
+   rely on \`MIRA_WORKSPACE\`) so you read/write the one true DB. If a command
+   says the workspace is not initialized, run \`mira init\` (optionally
+   \`--workspace <dir>\`) — never work around it by switching directories.
 3. **\`mira help\` is authoritative.** Run it for the full, current command
    surface and flags rather than guessing. This skill covers *when* and *in what
    order*; \`mira help\` covers *what exists*.
@@ -113,19 +130,23 @@ Then summarize in plain language — open items, recent notes, what's due.
   ack what you didn't.
 - \`mira brief [--weekly] [--send]\` builds (and optionally sends) the brief.
 
-## Agent-authored email
+## Agent-authored notifications
 
-When the user asks you to send a rich-text update, or a Mira workflow needs a
-human-readable message that is not a reminder/brief, use Mira's dedicated mail
-command so SMTP credentials stay inside the workspace config:
+When the user asks you to send an update, or a Mira workflow needs a
+human-readable message that is not a reminder/brief, use Mira's dedicated send
+commands so channel credentials stay inside the workspace config:
 
 \`\`\`bash
 mira mail send --workspace <dir> --subject "Subject" --html-file /path/to/message.html --text-file /path/to/message.txt
+mira discord send --workspace <dir> --subject "Subject" --text "Short notification"
 \`\`\`
 
-Prefer \`--html-file\`/\`--text-file\` for substantial content. The command uses
-\`channel.email\`'s configured recipient by default; do not ask for or print SMTP
-secrets. Use \`--channel stdout\` only for local dry/demo checks.
+For email, prefer \`--html-file\`/\`--text-file\` for substantial content; it uses
+\`channel.email\`'s configured recipient by default. Discord is send-only for
+short notifications (text only — any HTML is flattened); depending on how
+\`channel.discord\` is configured it either posts to a channel (webhook) or DMs a
+user (bot token). Do not ask for or print channel secrets. Use \`--channel
+stdout\` only for local dry/demo checks.
 
 ## Health & backlog
 
@@ -134,6 +155,14 @@ backlog. If \`brief\`/\`doctor\` reports a **backlog** (deliveries that retried 
 to \`delivery.max_attempts\` and failed), treat it as the priority signal: inspect
 the channel config, fix the cause, and tell the user — a silently stuck reminder
 is the one failure mode Mira exists to prevent.
+
+## Cron (the clock)
+
+Mira is daemonless — OS cron is the only clock. \`mira install cron --workspace
+<dir> | crontab -\` installs the sweep/brief schedule (always bind the same
+workspace so exactly-once holds). To remove it, \`mira install cron --uninstall |
+crontab -\` prints the crontab with Mira's lines stripped for the user to apply.
+Never hand-edit the crontab block.
 
 ## Secrets
 

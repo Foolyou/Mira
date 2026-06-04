@@ -2,12 +2,14 @@
 // cli.ts — the contract. Everything a reminder needs is reachable here so that
 // every brain (Claude Code, Codex, cron) drives Mira the same way: one `mira`
 // command per capability. The agent skill in skill.ts just guides this surface.
-import { openDb, resolveWorkspace, configGet, configSet, configAll } from "./db.ts";
+import { openDb, resolveWorkspace, isInitialized, initWorkspace, configGet, configSet, configAll } from "./db.ts";
 import { redactConfigValue, redactConfigMap } from "./secret.ts";
-import { installSkill, cronLines, NPM_PKG, type Invoker } from "./install.ts";
+import { installSkill, cronLines, cronUninstall, NPM_PKG, type Invoker } from "./install.ts";
+import { homedir } from "os";
+import { resolve, join } from "path";
 import * as core from "./core.ts";
 import { sweep, deliverAck } from "./sweep.ts";
-import { sendMail, sendTest } from "./delivery/index.ts";
+import { sendMail, sendDiscord, sendTest } from "./delivery/index.ts";
 import { sendBrief, buildBrief } from "./brief.ts";
 import { importV1 } from "./import.ts";
 import { doctor, verifyImport } from "./doctor.ts";
@@ -96,6 +98,7 @@ DELIVERY LOOP (the heart)
   send-test [--channel <c>]                            actually deliver a test message (default channel)
   deliver-ack <log_id> --channel <c> [--by name]
   mail send --subject <s> [--text t|--text-file path] [--html h|--html-file path] [--channel email]
+  discord send [--subject s] [--text t|--text-file path] [--html h|--html-file path]   notify the Discord webhook
 
 READ MODELS
   dashboard [--day YYYY-MM-DD] | search <q> | timeline [--days N] | counts
@@ -108,15 +111,17 @@ KNOWLEDGE
   capture <text> | capture list [--kind k --source s --status s --limit N]
 
 ADMIN
+  init [--workspace dir]                               create the workspace (.mira) — required before first use
   config get <key> | config set <key> <value> | config list
   import-v1 --from <lifework.db> [--force]
   doctor [--check-channel]
   install claude-code|codex [--user] [--workspace dir] install the Mira skill (project, or --user/global)
   install cron [--via binary|bunx|global] [--bin path --workspace dir] | crontab -
+  install cron --uninstall | crontab -                remove Mira's cron lines (prints the cleaned crontab)
 
 GLOBAL FLAGS
   --workspace <dir> | --demo | --db <path>
-  default workspace: <current-working-directory>/.mira/workspace
+  default workspace: <current-working-directory>/.mira  (create it with: mira init)
 `;
 
 async function main() {
@@ -135,6 +140,15 @@ async function main() {
     if (target === "claude-code" || target === "codex") {
       out(installSkill(target, flags.user ? "user" : "project", { workspace: str(flags.workspace) }));
     } else if (target === "cron") {
+      // `--uninstall` is the inverse: read the current crontab, strip Mira's
+      // managed lines, and print what should remain (pipe to `crontab -`).
+      if (flags.uninstall) {
+        const cur = Bun.spawnSync(["crontab", "-l"]);
+        const current = cur.exitCode === 0 ? cur.stdout.toString() : "";
+        process.stdout.write(cronUninstall(current));
+        process.stderr.write("# pipe to crontab to apply: mira install cron --uninstall | crontab -\n");
+        return;
+      }
       const workspace = str(flags.workspace) ?? resolveWorkspace();
       const via = str(flags.via) ?? (/[\\/]bun(\.exe)?$/.test(process.execPath) ? "global" : "binary");
       let invoker: Invoker;
@@ -149,9 +163,35 @@ async function main() {
     return;
   }
 
+  // The workspace for this invocation: --workspace (with ~ and relative-path
+  // expansion) > MIRA_WORKSPACE/cwd default. There is no global fallback.
+  const resolveWs = (): string => {
+    const w = str(flags.workspace);
+    if (w) return w.startsWith("~") ? join(homedir(), w.slice(1)) : resolve(process.cwd(), w);
+    return resolveWorkspace();
+  };
+
+  // `mira init`: create the workspace (.mira) and run migrations. The one
+  // command allowed to bring a workspace into existence; everything else errors
+  // until it has run, so you never silently spawn a second empty DB by running
+  // from the wrong directory.
+  if (cmd === "init") {
+    out(initWorkspace(resolveWs()));
+    return;
+  }
+
+  const explicitDb = str(flags.db);
+  const ws = resolveWs();
+  // Refuse data commands on an uninitialized workspace. `--demo` and an explicit
+  // `--db` path are exempt (ephemeral / advanced / test paths).
+  if (!flags.demo && !explicitDb && !isInitialized(ws)) {
+    const hint = str(flags.workspace) ? ` --workspace ${str(flags.workspace)}` : "";
+    fail(`workspace not initialized at ${join(ws, "mira.db")} — run: mira init${hint}`);
+  }
+
   const db = openDb({
     demo: !!flags.demo,
-    path: str(flags.db) ?? (str(flags.workspace) ? `${str(flags.workspace)}/mira.db` : undefined),
+    path: explicitDb ?? (str(flags.workspace) ? join(ws, "mira.db") : undefined),
   });
 
   try {
@@ -271,6 +311,15 @@ async function main() {
           text: flagText(flags, "text", "text-file"),
           html: flagText(flags, "html", "html-file"),
           channel: str(flags.channel),
+        }));
+        break;
+      }
+      case "discord": {
+        if (_[1] !== "send") fail("discord send [--subject s] [--text/--text-file] [--html/--html-file]");
+        out(await sendDiscord(db, {
+          subject: str(flags.subject),
+          text: flagText(flags, "text", "text-file"),
+          html: flagText(flags, "html", "html-file"),
         }));
         break;
       }

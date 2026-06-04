@@ -5,6 +5,7 @@
 import type { Database } from "bun:sqlite";
 import { StdoutChannel } from "./stdout.ts";
 import { EmailChannel } from "./email.ts";
+import { DiscordChannel } from "./discord.ts";
 import { defaultChannel } from "../db.ts";
 import { nowTs } from "../time.ts";
 
@@ -32,6 +33,8 @@ export function getChannel(db: Database, name: string): Channel {
   switch (name) {
     case "email":
       return new EmailChannel(db);
+    case "discord":
+      return new DiscordChannel(db);
     case "stdout":
     case "":
       return new StdoutChannel();
@@ -77,6 +80,33 @@ export async function sendMail(
   };
   await getChannel(db, name).send(payload);
   return { sent: true, channel: name, payload };
+}
+
+export interface SendDiscordOptions {
+  subject?: string;
+  text?: string;
+  html?: string;
+}
+
+// The Discord counterpart to `sendMail`: send a notification through the
+// configured `channel.discord` — a channel webhook or a bot DM, decided by the
+// stored config shape, not here. Discord renders text, not HTML, so an
+// `--html`/`--html-file` body is flattened to text; either a subject or a body
+// is enough (a bare notification needs no title).
+export async function sendDiscord(
+  db: Database,
+  opts: SendDiscordOptions,
+): Promise<{ sent: boolean; channel: string; payload: Payload }> {
+  const subject = (opts.subject ?? "").trim();
+  const text = (opts.text ?? (opts.html ? htmlToText(opts.html) : "")).trim();
+  if (!subject && !text) throw new Error("discord send needs --subject and/or --text/--text-file/--html/--html-file");
+  const payload: Payload = {
+    subject: subject || "Mira",
+    text: text || subject,
+    ...(opts.html ? { html: opts.html } : {}),
+  };
+  await getChannel(db, "discord").send(payload);
+  return { sent: true, channel: "discord", payload };
 }
 
 function htmlToText(html: string): string {

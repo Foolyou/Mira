@@ -2,15 +2,20 @@
 // migrations, and config. Everything else in Mira opens its DB through here.
 import { Database } from "bun:sqlite";
 import { join } from "path";
-import { mkdirSync } from "fs";
+import { mkdirSync, existsSync, copyFileSync } from "fs";
 
 export const SCHEMA_VERSION = 1;
 
 // ---------------------------------------------------------------------------
-// Workspace / path resolution. Order (highest precedence first):
-//   per-call override  >  MIRA_WORKSPACE env  >  default <cwd>/.mira/workspace
-// Granular MIRA_DB_PATH / MIRA_DEMO_DB_PATH override the individual db file
-// (used by Docker and tests). The CLI flips the override per invocation.
+// Workspace / path resolution. There is NO global/home workspace: a workspace
+// is just a `.mira` directory and Mira always works against the one in the
+// current working directory unless told otherwise. Order (highest precedence
+// first):
+//   per-call override  >  MIRA_WORKSPACE env  >  default <cwd>/.mira
+// A workspace must be created explicitly with `mira init`; data commands error
+// if it does not exist (so you never silently spawn a second, empty DB just by
+// running from the wrong directory). Granular MIRA_DB_PATH / MIRA_DEMO_DB_PATH
+// override the individual db file (used by Docker and tests).
 // ---------------------------------------------------------------------------
 let workspaceOverride: string | null = null;
 
@@ -22,7 +27,7 @@ export function resolveWorkspace(): string {
   return (
     workspaceOverride ??
     process.env.MIRA_WORKSPACE ??
-    join(process.cwd(), ".mira", "workspace")
+    join(process.cwd(), ".mira")
   );
 }
 
@@ -32,17 +37,57 @@ export function dbPath(demo = false): string {
   return join(resolveWorkspace(), demo ? "demo.db" : "mira.db");
 }
 
+// Has this workspace been initialized (its mira.db exists)? Used by the CLI to
+// refuse data commands until `mira init` has run.
+export function isInitialized(workspace?: string): boolean {
+  const ws = workspace ?? resolveWorkspace();
+  return existsSync(join(ws, "mira.db"));
+}
+
+// Create (or no-op return) a workspace at `workspace`, running migrations. If a
+// legacy nested layout (<workspace>/workspace/mira.db, from the pre-redesign
+// `.mira/workspace` convention) is found, copy it up so existing data is
+// adopted rather than orphaned — the old copy is left in place as a backup.
+export function initWorkspace(workspace?: string): {
+  workspace: string;
+  db_path: string;
+  created: boolean;
+  migrated_from?: string;
+} {
+  const ws = workspace ?? resolveWorkspace();
+  const target = join(ws, "mira.db");
+  if (existsSync(target)) {
+    const db = openDb({ path: target, create: true });
+    db.close();
+    return { workspace: ws, db_path: target, created: false };
+  }
+  mkdirSync(ws, { recursive: true });
+  let migratedFrom: string | undefined;
+  const legacy = join(ws, "workspace", "mira.db");
+  if (existsSync(legacy)) {
+    copyFileSync(legacy, target);
+    for (const sfx of ["-wal", "-shm"]) {
+      if (existsSync(legacy + sfx)) copyFileSync(legacy + sfx, target + sfx);
+    }
+    migratedFrom = legacy;
+  }
+  const db = openDb({ path: target, create: true });
+  db.close();
+  return { workspace: ws, db_path: target, created: true, ...(migratedFrom ? { migrated_from: migratedFrom } : {}) };
+}
+
 // ---------------------------------------------------------------------------
 // Opening. WAL + busy_timeout make the atomic claim safe under concurrent
 // "brains" (cron / Claude Code / Codex) all sweeping at once.
 // ---------------------------------------------------------------------------
-export function openDb(opts: { demo?: boolean; path?: string } = {}): Database {
+export function openDb(opts: { demo?: boolean; path?: string; create?: boolean } = {}): Database {
   const path = opts.path ?? dbPath(opts.demo);
-  if (path !== ":memory:") {
+  const create = opts.create ?? true;
+  if (path !== ":memory:" && create) {
     const dir = path.replace(/[^/]+$/, "");
     if (dir) mkdirSync(dir, { recursive: true });
   }
-  const db = new Database(path, { create: true });
+  const db = new Database(path, { create });
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");

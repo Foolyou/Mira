@@ -18,11 +18,22 @@ bun build --compile src/cli.ts --outfile mira   # single binary for cron
 No build step is required to run; `--compile` only exists to ship a deployment
 binary as a fallback.
 
-By default, Mira stores its SQLite workspace under the current working directory:
-`./.mira/workspace`. `--workspace <dir>` and `MIRA_WORKSPACE` override that. A
-project skill installed with `mira install claude-code|codex` binds to that
-project-local workspace; `--user` binds the skill to `~/.mira/workspace`, and an
-explicit `--workspace` during install wins over both defaults.
+A Mira workspace is a `.mira` directory — there is **no global/home workspace**.
+By default Mira works against `./.mira` in the current working directory;
+`--workspace <dir>` and `MIRA_WORKSPACE` override that. The workspace must be
+created explicitly:
+
+```bash
+mira init          # create ./.mira here (required before any data command)
+```
+
+Until it exists, data commands error and point you at `mira init`, so running
+from the wrong directory never silently spawns a second, empty database
+(`--demo` and an explicit `--db <path>` are exempt). A project skill installed
+with `mira install claude-code|codex` binds to — and auto-initializes — that
+project-local `./.mira`; `--user` installs the skill globally but bakes **no**
+workspace (it tells the agent to `mira init` its own working directory); an
+explicit `--workspace` during install wins and is initialized too.
 
 ## Install (single binary — the recommended form)
 
@@ -44,9 +55,10 @@ Either way you can then build it yourself and register it everywhere:
 
 ```bash
 bun run compile                 # -> ./mira   (or `bun run dist` for all platforms)
+cd ~/assistant && ./mira init   # create the workspace (./.mira) where you'll use Mira
 ./mira install claude-code      # write the Mira skill to .claude/skills/mira/ (--user for ~/.claude)
 ./mira install codex            # write the Mira skill to .codex/skills/mira/  (--user for ~/.codex)
-./mira install cron --workspace ~/.mira/workspace | crontab - # the only clock
+./mira install cron --workspace ~/assistant/.mira | crontab - # the only clock
 ```
 
 All of them should point at **one binary and one workspace**, so the SQLite truth
@@ -56,10 +68,11 @@ source is shared and exactly-once holds across every brain + cron.
   `install claude-code`/`install codex` drop the **same** [`SKILL.md`](https://developers.openai.com/codex/skills)
   (the open Agent Skills standard) into the agent's skills directory, so it picks
   Mira up by description and knows how to sequence the commands. Default scope is
-  the project (`.claude/skills/` · `.codex/skills/`) and binds to
-  `./.mira/workspace`; add `--user` to install globally
-  (`~/.claude/skills/` · `$CODEX_HOME/skills/`) and bind to `~/.mira/workspace`.
-  Add `--workspace <dir>` during install to bind the skill to a different
+  the project (`.claude/skills/` · `.codex/skills/`) and binds to — and
+  initializes — `./.mira`; add `--user` to install globally
+  (`~/.claude/skills/` · `$CODEX_HOME/skills/`), which bakes **no** workspace and
+  instructs the agent to `mira init` its own working directory. Add
+  `--workspace <dir>` during install to bind (and initialize) a specific
   workspace.
 
 ### Secondary path — npm / bunx (Bun-only)
@@ -76,7 +89,8 @@ bunx mira-copilot help
 bun add -g mira-copilot
 mira install claude-code --user          # write the skill to ~/.claude/skills/mira/
 mira install codex       --user          # write the skill to $CODEX_HOME/skills/mira/
-mira install cron        --via global --workspace ~/.mira/workspace | crontab -
+cd ~/assistant && mira init              # create the workspace you'll bind cron to
+mira install cron        --via global --workspace ~/assistant/.mira | crontab -
 ```
 
 The skill assumes `mira` is on PATH (true after `bun add -g` or the binary
@@ -97,7 +111,7 @@ published to npm.
 ① clock   OS cron  →  mira sweep / mira brief   (one-shot, no daemon)
 ② brain   Claude Code (skill→CLI) │ Codex (skill→CLI) │ pure cron (no agent)   — pluggable
 ③ core    recurrence resolver · occurrence materialization · idempotent claim
-          delivery ports (email/stdout/…) · read-models · CRUD
+          delivery ports (email/discord/stdout/…) · read-models · CRUD
                                    ↓
                          SQLite (single file, sole source of truth)
 ```
@@ -106,7 +120,7 @@ published to npm.
 - `src/time.ts` — local-naive time (`YYYY-MM-DD HH:MM`), ISO week, weekday (0=Mon).
 - `src/recurrence.ts` — the ONE resolver: `resolveOccurrences` + `isDueOn`.
 - `src/sweep.ts` — the heart: candidate → `INSERT OR IGNORE` → atomic claim → deliver. `deliverAck` for B2.
-- `src/delivery/` — `Channel` port; `stdout` (dev/agent) and `email` (nodemailer/iCloud).
+- `src/delivery/` — `Channel` port; `stdout` (dev/agent), `email` (nodemailer/iCloud), and `discord` (send-only webhook).
 - `src/core.ts` — task/reminder/recurrence CRUD + read-models (dashboard, search, timeline, context, meeting_prep).
 - `src/brief.ts` — daily/weekly HTML+text brief, with delivery-backlog alerts.
 - `src/import.ts` — `import-v1` from `data/lifework.db`.
@@ -147,6 +161,13 @@ mira mail send --subject "Update" --html-file /tmp/message.html --text-file /tmp
 This uses `channel.email` by default, including its configured recipient, so SMTP
 credentials and addressing policy stay inside Mira.
 
+Discord has its own send-only command for ad-hoc notifications through the
+configured webhook:
+
+```bash
+mira discord send --subject "Heads up" --text "Backup finished"
+```
+
 ## Configure email (iCloud)
 
 ```bash
@@ -155,6 +176,45 @@ mira config set channel.email '{"smtp_host":"smtp.mail.me.com","smtp_port":587,"
 mira doctor --check-channel        # verifies SMTP login (sends nothing)
 mira send-test                     # actually delivers a test message
 ```
+
+## Configure Discord (webhook)
+
+Discord is a **send-only** channel: it posts to an incoming webhook, so there is
+no bot, gateway, or polling — exactly what notification delivery needs. Create a
+webhook in *Server Settings → Integrations → Webhooks*, then:
+
+```bash
+mira config set delivery.default_channel discord
+mira config set channel.discord '{"webhook_url":"file:~/.secrets/mira-discord","username":"Mira"}'
+mira doctor --check-channel        # GETs the webhook to validate it (posts nothing)
+mira send-test                     # actually delivers a test message
+mira discord send --subject "Heads up" --text "Ad-hoc notification"
+```
+
+The webhook URL *is* the credential (anyone holding it can post), so it accepts
+the same `file:`/`env:` reference forms as the SMTP password below and is
+redacted in `config` output. `username`/`avatar_url` are optional cosmetic
+overrides for the posted message.
+
+### Private DM via a bot (instead of a channel webhook)
+
+The same `discord` channel can **private-message a user** instead of posting to a
+channel — still send-only and daemonless (two REST calls, no gateway). Use a
+bot-token config shape instead of a webhook one:
+
+```bash
+mira config set channel.discord '{"bot_token":"file:~/.secrets/mira-bot","user_id":"<your numeric Discord id>"}'
+mira doctor --check-channel        # validates the bot token (sends nothing)
+mira send-test
+```
+
+`bot_token` takes precedence if both shapes are present, and is redacted/resolved
+just like the webhook URL. Discord requires that **the bot and the recipient
+share at least one server** and that the user allows DMs from server members —
+otherwise the send returns 403. Setup: create a bot at
+<https://discord.com/developers>, copy its **Bot Token**, invite it to a server
+you are in, and copy your **User ID** (Settings → Advanced → Developer Mode →
+right-click yourself → Copy User ID).
 
 ### Keeping the credential out of harm's way
 
@@ -188,7 +248,20 @@ exposure path (a routine command echoing the secret).
 
 `mira install cron --workspace <dir> | crontab -` emits the schedule (with
 absolute paths for this machine): a `*/5` backstop sweep plus three daily briefs
-and a Sunday weekly. Failures retry on the next tick.
+and a Sunday weekly. Failures retry on the next tick. Always pass an explicit
+`--workspace` (an **initialized** one — run `mira init` there first) so cron and
+the brains share one SQLite truth source.
+
+To remove it later:
+
+```bash
+mira install cron --uninstall | crontab -   # prints your crontab with Mira's lines stripped
+```
+
+`--uninstall` reads your current crontab, drops the Mira-managed lines (the
+header comment, the `MIRA_WORKSPACE=` assignment, and the `sweep`/`brief`
+schedules) by content, and prints the rest for you to apply — it never writes
+your crontab itself.
 
 ## Migrate real v1 data
 

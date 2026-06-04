@@ -8,6 +8,7 @@ import { homedir } from "os";
 import { join, dirname, resolve } from "path";
 import { writeFileSync, mkdirSync } from "fs";
 import { skillMarkdown } from "./skill.ts";
+import { initWorkspace, isInitialized } from "./db.ts";
 
 // The npm package name (secondary path). `bunx <PKG> <command>` runs the CLI.
 export const NPM_PKG = "mira-copilot";
@@ -55,10 +56,13 @@ function skillDir(agent: SkillAgent, scope: SkillScope, cwd: string): string {
   return join(root, "skills", "mira");
 }
 
-export function defaultSkillWorkspace(scope: SkillScope, cwd = process.cwd()): string {
-  return scope === "user"
-    ? join(homedir(), ".mira", "workspace")
-    : join(cwd, ".mira", "workspace");
+// The workspace a freshly installed skill should bind to, or undefined when
+// none should be baked in. Project scope binds the cwd's `.mira` (an absolute
+// path, so the agent always hits the same DB regardless of where it later cd's).
+// User scope is global — there is no single project dir, so we bake no path and
+// the SKILL.md tells the agent to use (and `mira init`) the cwd's `.mira`.
+export function defaultSkillWorkspace(scope: SkillScope, cwd = process.cwd()): string | undefined {
+  return scope === "user" ? undefined : join(cwd, ".mira");
 }
 
 function normalizeWorkspace(workspace: string, cwd: string): string {
@@ -70,14 +74,23 @@ function normalizeWorkspace(workspace: string, cwd: string): string {
 // Install the Mira skill for one agent. Writes the canonical SKILL.md (baked
 // into the binary) so the agent picks Mira up implicitly by description and can
 // drive the CLI. Overwrites an existing copy so re-running keeps it current.
+// When a concrete workspace is bound (project scope or an explicit --workspace)
+// and it has not been initialized yet, it is created here so the agent can use
+// Mira immediately without a separate `mira init`.
 export function installSkill(agent: SkillAgent, scope: SkillScope, opts: SkillInstallOptions = {}) {
   const cwd = opts.cwd ?? process.cwd();
   const dir = skillDir(agent, scope, cwd);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "SKILL.md");
-  const workspace = normalizeWorkspace(opts.workspace ?? defaultSkillWorkspace(scope, cwd), cwd);
+  const bound = opts.workspace ?? defaultSkillWorkspace(scope, cwd);
+  const workspace = bound ? normalizeWorkspace(bound, cwd) : undefined;
   writeFileSync(file, skillMarkdown(workspace));
-  return { agent, scope, workspace, wrote: file };
+  let initialized = false;
+  if (workspace && !isInitialized(workspace)) {
+    initWorkspace(workspace);
+    initialized = true;
+  }
+  return { agent, scope, workspace: workspace ?? null, wrote: file, initialized };
 }
 
 // Cron: return the crontab lines (we print, never auto-overwrite the user's
@@ -96,4 +109,22 @@ export function cronLines(t: InstallTarget): string {
     `0 7   * * 0  ${shell(t, "brief", "--send", "--weekly")} >> ${log("mira-brief.log")} 2>&1`,
     "",
   ].join("\n");
+}
+
+// Strip Mira-managed lines from an existing crontab, returning what should
+// remain. The inverse of cronLines: we never touch the user's crontab directly
+// (`mira install cron --uninstall | crontab -` is theirs to run), we just emit
+// the cleaned text. Lines are matched by content, not position, so a hand-moved
+// block is still removed: the header comment, the MIRA_WORKSPACE assignment, and
+// any schedule line invoking `mira sweep`/`mira brief`.
+export function cronUninstall(current: string): string {
+  const kept = current.split("\n").filter((l) => {
+    if (/^#\s*Mira\b/.test(l)) return false;
+    if (/^\s*MIRA_WORKSPACE=/.test(l)) return false;
+    if (/\bmira\b.*\b(sweep|brief)\b/.test(l)) return false;
+    return true;
+  });
+  // Collapse the blank lines left behind and keep a single trailing newline.
+  const out = kept.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+/, "").replace(/\n+$/, "");
+  return out ? out + "\n" : "";
 }
