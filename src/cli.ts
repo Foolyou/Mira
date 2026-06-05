@@ -9,7 +9,7 @@ import { homedir } from "os";
 import { resolve, join } from "path";
 import * as core from "./core.ts";
 import { sweep, deliverAck } from "./sweep.ts";
-import { sendMail, sendDiscord, sendTest } from "./delivery/index.ts";
+import { sendMail, sendDiscord, sendFeishu, sendTest } from "./delivery/index.ts";
 import { sendBrief, buildBrief } from "./brief.ts";
 import { importV1 } from "./import.ts";
 import { doctor, verifyImport } from "./doctor.ts";
@@ -99,6 +99,7 @@ DELIVERY LOOP (the heart)
   deliver-ack <log_id> --channel <c> [--by name]
   mail send --subject <s> [--text t|--text-file path] [--html h|--html-file path] [--channel email]
   discord send [--subject s] [--text t|--text-file path] [--html h|--html-file path]   notify the Discord webhook
+  feishu send [--subject s] [--text t|--text-file path] [--html h|--html-file path]    notify yourself via local lark-cli
 
 READ MODELS
   dashboard [--day YYYY-MM-DD] | search <q> | timeline [--days N] | counts
@@ -317,6 +318,15 @@ async function main() {
       case "discord": {
         if (_[1] !== "send") fail("discord send [--subject s] [--text/--text-file] [--html/--html-file]");
         out(await sendDiscord(db, {
+          subject: str(flags.subject),
+          text: flagText(flags, "text", "text-file"),
+          html: flagText(flags, "html", "html-file"),
+        }));
+        break;
+      }
+      case "feishu": {
+        if (_[1] !== "send") fail("feishu send [--subject s] [--text/--text-file] [--html/--html-file]");
+        out(await sendFeishu(db, {
           subject: str(flags.subject),
           text: flagText(flags, "text", "text-file"),
           html: flagText(flags, "html", "html-file"),

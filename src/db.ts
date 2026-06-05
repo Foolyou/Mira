@@ -77,22 +77,30 @@ export function initWorkspace(workspace?: string): {
 }
 
 // ---------------------------------------------------------------------------
-// Opening. WAL + busy_timeout make the atomic claim safe under concurrent
-// "brains" (cron / Claude Code / Codex) all sweeping at once.
+// Opening. A current existing DB stays on the read-mostly fast path: no schema
+// init transaction and no journal-mode write. New/outdated DBs still initialize
+// under a write lock. busy_timeout keeps real writer contention polite.
 // ---------------------------------------------------------------------------
 export function openDb(opts: { demo?: boolean; path?: string; create?: boolean } = {}): Database {
   const path = opts.path ?? dbPath(opts.demo);
   const create = opts.create ?? true;
+  const existed = path === ":memory:" ? false : existsSync(path);
   if (path !== ":memory:" && create) {
     const dir = path.replace(/[^/]+$/, "");
     if (dir) mkdirSync(dir, { recursive: true });
   }
   const db = new Database(path, { create });
-  db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
-  initDb(db);
+  if (!existed || schemaVersion(db) !== SCHEMA_VERSION) {
+    if (path !== ":memory:") db.exec("PRAGMA journal_mode = WAL");
+    initDb(db);
+  }
   return db;
+}
+
+function schemaVersion(db: Database): number {
+  return (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
 }
 
 function columnExists(db: Database, table: string, column: string): boolean {

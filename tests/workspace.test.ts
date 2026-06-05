@@ -1,5 +1,5 @@
 import { test, expect, describe, afterAll } from "bun:test";
-import { resolveWorkspace, setWorkspaceOverride, isInitialized } from "../src/db.ts";
+import { resolveWorkspace, setWorkspaceOverride, isInitialized, openDb } from "../src/db.ts";
 import { defaultSkillWorkspace, installSkill } from "../src/install.ts";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -46,6 +46,31 @@ describe("workspace resolution", () => {
       if (prevEnv === undefined) delete process.env.MIRA_WORKSPACE;
       else process.env.MIRA_WORKSPACE = prevEnv;
       setWorkspaceOverride(null);
+    }
+  });
+});
+
+describe("database open path", () => {
+  test("opening a current DB does not need a write lock", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "mira-db-open-"));
+    const dbFile = join(cwd, "mira.db");
+    const setup = openDb({ path: dbFile });
+    setup.close();
+
+    const writer = openDb({ path: dbFile });
+    writer.exec("BEGIN IMMEDIATE");
+    try {
+      const reader = openDb({ path: dbFile });
+      try {
+        const row = reader.query("SELECT COUNT(*) AS n FROM tasks").get() as { n: number };
+        expect(row.n).toBe(0);
+      } finally {
+        reader.close();
+      }
+    } finally {
+      writer.exec("ROLLBACK");
+      writer.close();
+      rmSync(cwd, { recursive: true, force: true });
     }
   });
 });

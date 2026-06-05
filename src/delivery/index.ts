@@ -1,11 +1,11 @@
 // delivery/index.ts — the channel port. A channel just takes a rendered
-// payload and gets it in front of the user. Config lives only in the Mira
-// workspace, never in the agent, so Claude Code and Codex deliver byte-for-byte
-// identically.
+// payload and gets it in front of the user. Delivery policy lives in Mira, never
+// in the agent, so Claude Code and Codex deliver byte-for-byte identically.
 import type { Database } from "bun:sqlite";
 import { StdoutChannel } from "./stdout.ts";
 import { EmailChannel } from "./email.ts";
 import { DiscordChannel } from "./discord.ts";
+import { FeishuChannel } from "./feishu.ts";
 import { defaultChannel } from "../db.ts";
 import { nowTs } from "../time.ts";
 
@@ -35,11 +35,13 @@ export function getChannel(db: Database, name: string): Channel {
       return new EmailChannel(db);
     case "discord":
       return new DiscordChannel(db);
+    case "feishu":
+      return new FeishuChannel(db);
     case "stdout":
     case "":
       return new StdoutChannel();
     default:
-      // ntfy/feishu are future fast channels; until implemented, be loud.
+      // Future fast channels can land here; until implemented, be loud.
       return new StdoutChannel(`(channel '${name}' not implemented; using stdout)`);
   }
 }
@@ -88,6 +90,12 @@ export interface SendDiscordOptions {
   html?: string;
 }
 
+export interface SendFeishuOptions {
+  subject?: string;
+  text?: string;
+  html?: string;
+}
+
 // The Discord counterpart to `sendMail`: send a notification through the
 // configured `channel.discord` — a channel webhook or a bot DM, decided by the
 // stored config shape, not here. Discord renders text, not HTML, so an
@@ -107,6 +115,25 @@ export async function sendDiscord(
   };
   await getChannel(db, "discord").send(payload);
   return { sent: true, channel: "discord", payload };
+}
+
+// Feishu sends through the locally authenticated lark-cli user identity. It is
+// intentionally self-addressed: the channel resolves the current user and DMs
+// that same account, so Mira needs no Feishu credentials or recipient config.
+export async function sendFeishu(
+  db: Database,
+  opts: SendFeishuOptions,
+): Promise<{ sent: boolean; channel: string; payload: Payload }> {
+  const subject = (opts.subject ?? "").trim();
+  const text = (opts.text ?? (opts.html ? htmlToText(opts.html) : "")).trim();
+  if (!subject && !text) throw new Error("feishu send needs --subject and/or --text/--text-file/--html/--html-file");
+  const payload: Payload = {
+    subject: subject || "Mira",
+    text: text || subject,
+    ...(opts.html ? { html: opts.html } : {}),
+  };
+  await getChannel(db, "feishu").send(payload);
+  return { sent: true, channel: "feishu", payload };
 }
 
 function htmlToText(html: string): string {

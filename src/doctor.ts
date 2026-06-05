@@ -12,6 +12,7 @@ import {
 import { deliveryAlerts } from "./brief.ts";
 import { EmailChannel } from "./delivery/email.ts";
 import { DiscordChannel } from "./delivery/discord.ts";
+import { FeishuChannel } from "./delivery/feishu.ts";
 
 export interface DoctorReport {
   ok: boolean;
@@ -70,6 +71,20 @@ export async function doctor(
           checks.push({ name: "discord-connectivity", ok: true, detail: "webhook reachable" });
         } catch (e: any) {
           checks.push({ name: "discord-connectivity", ok: false, detail: String(e?.message ?? e) });
+        }
+      }
+    } else if (channel === "feishu") {
+      checks.push({
+        name: "feishu-cli",
+        ok: true,
+        detail: "uses local lark-cli user auth; no Mira channel config required",
+      });
+      if (opts.checkChannel) {
+        try {
+          await new FeishuChannel(db).verify();
+          checks.push({ name: "feishu-connectivity", ok: true, detail: "lark-cli user auth ok" });
+        } catch (e: any) {
+          checks.push({ name: "feishu-connectivity", ok: false, detail: String(e?.message ?? e) });
         }
       }
     } else if (channel === "stdout") {

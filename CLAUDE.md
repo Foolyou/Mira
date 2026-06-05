@@ -18,7 +18,7 @@ Codex alike.
   - `src/time.ts` — local-naive time (`YYYY-MM-DD HH:MM`), ISO week, weekday (0=Mon).
   - `src/recurrence.ts` — the ONE resolver: `resolveOccurrences` + `isDueOn`.
   - `src/sweep.ts` — the heart: candidate → `INSERT OR IGNORE` → atomic claim → deliver.
-  - `src/delivery/` — `Channel` port; `stdout` (dev/agent) and `email` (nodemailer/iCloud).
+  - `src/delivery/` — `Channel` port; `stdout` (dev/agent), `email`, `discord`, and `feishu`.
   - `src/core.ts` — task/reminder/recurrence CRUD + read-models (dashboard, search, timeline, context, meeting_prep).
   - `src/brief.ts` — daily/weekly HTML+text brief with delivery-backlog alerts.
   - `src/import.ts` — `import-v1` from `data/lifework.db`.
@@ -55,7 +55,9 @@ Codex alike.
   means updating the migration test.
 - **Delivery modes** (`config set delivery.mode …`): `mira` (Mira sends), `agent`
   (Mira claims and emits payload as JSON, brain forwards and calls `deliver-ack`),
-  `both`. Channel config lives only in the workspace DB, never in the agent.
+  `both`. Delivery policy lives in Mira, never in the agent. Email/Discord
+  credentials live in the workspace DB; Feishu uses the user's local `lark-cli`
+  auth and stores no Mira-side bot credential.
 - **Bun-only runtime.** Uses `bun:sqlite`; `npx`/`node` will not run it. The
   compiled single binary (`bun build --compile`) bakes everything in for cron.
 

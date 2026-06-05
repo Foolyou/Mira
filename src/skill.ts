@@ -139,14 +139,17 @@ commands so channel credentials stay inside the workspace config:
 \`\`\`bash
 mira mail send --workspace <dir> --subject "Subject" --html-file /path/to/message.html --text-file /path/to/message.txt
 mira discord send --workspace <dir> --subject "Subject" --text "Short notification"
+mira feishu send --workspace <dir> --subject "Subject" --text "Short notification"
 \`\`\`
 
 For email, prefer \`--html-file\`/\`--text-file\` for substantial content; it uses
 \`channel.email\`'s configured recipient by default. Discord is send-only for
 short notifications (text only — any HTML is flattened); depending on how
 \`channel.discord\` is configured it either posts to a channel (webhook) or DMs a
-user (bot token). Do not ask for or print channel secrets. Use \`--channel
-stdout\` only for local dry/demo checks.
+user (bot token). Feishu sends to the user's own account through the already
+authenticated local \`lark-cli\`; Mira stores no Feishu bot credentials. Do not
+ask for or print channel secrets. Use \`--channel stdout\` only for local
+dry/demo checks.
 
 ## Health & backlog
 
