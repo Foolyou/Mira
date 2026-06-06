@@ -147,10 +147,11 @@ is the one failure mode Mira exists to prevent.
 
 Mira is daemonless — OS cron is the only clock. From the initialized Mira
 directory, \`mira install cron | crontab -\` installs the sweep/brief schedule;
-the generated cron lines \`cd\` back to that directory before running Mira. To
-remove it, \`mira install cron --uninstall | crontab -\` prints the crontab with
-this directory's Mira lines stripped for the user to apply. Never hand-edit the
-crontab block.
+the generated cron lines \`cd\` back to that directory and carry the installer
+shell's \`PATH\` before running Mira, so npm/nvm helpers such as \`lark-cli\` stay
+visible to cron. To remove it, \`mira install cron --uninstall | crontab -\`
+prints the crontab with this directory's Mira lines stripped for the user to
+apply. Never hand-edit the crontab block.
 
 ## Secrets
 

@@ -11,7 +11,8 @@ import { sendMail, sendDiscord, sendFeishu, sendTest } from "./delivery/index.ts
 import { sendBrief, buildBrief } from "./brief.ts";
 import { importV1 } from "./import.ts";
 import { doctor, verifyImport } from "./doctor.ts";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { delimiter, dirname, join } from "path";
 
 interface Parsed {
   _: string[];
@@ -103,6 +104,29 @@ function initAgents(flags: Record<string, FlagValue>): SkillAgent[] {
     }
   }
   return out;
+}
+
+function cronEnvPath(invoker: Invoker): string {
+  const dirs: string[] = [];
+  const add = (dir: string | undefined) => {
+    if (dir && !dirs.includes(dir)) dirs.push(dir);
+  };
+  add(commandDir(invoker.command));
+  for (const cmd of [...invoker.prefix, "mira", "lark-cli", "node", "bun", "bunx"]) {
+    add(commandDir(cmd));
+  }
+  for (const dir of ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]) add(dir);
+  return dirs.join(delimiter);
+}
+
+function commandDir(cmd: string): string | undefined {
+  if (!cmd || cmd.includes(" ")) return undefined;
+  if (cmd.includes("/")) return existsSync(cmd) ? dirname(cmd) : undefined;
+  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+    const full = join(dir, cmd);
+    if (existsSync(full)) return dir;
+  }
+  return undefined;
 }
 
 function flagText(flags: Record<string, FlagValue>, inlineKey: string, fileKey: string): string | undefined {
@@ -202,7 +226,7 @@ async function main() {
       else if (via === "global") invoker = { command: "mira", prefix: [] };
       else if (via === "binary") invoker = { command: str(flags.bin) ?? selfBin(), prefix: [] };
       else { fail("--via must be binary|bunx|global"); }
-      process.stdout.write(cronLines({ invoker: invoker!, cwd }));
+      process.stdout.write(cronLines({ invoker: invoker!, cwd, envPath: cronEnvPath(invoker!) }));
     } else {
       fail("install <claude-code|codex|cron> [--user] [--via binary|bunx|global --bin path]");
     }

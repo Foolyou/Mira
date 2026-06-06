@@ -4,14 +4,14 @@
 import { test, expect, describe } from "bun:test";
 import { cronLines, cronUninstall } from "../src/install.ts";
 
-const target = { invoker: { command: "/home/me/.mira/bin/mira", prefix: [] }, cwd: "/home/me/proj" };
-const other = { invoker: { command: "/home/me/.mira/bin/mira", prefix: [] }, cwd: "/home/me/other" };
+const target = { invoker: { command: "/home/me/.mira/bin/mira", prefix: [] }, cwd: "/home/me/proj", envPath: "/home/me/.nvm/versions/node/v24/bin:/usr/bin:/bin" };
+const other = { invoker: { command: "/home/me/.mira/bin/mira", prefix: [] }, cwd: "/home/me/other", envPath: "/usr/local/bin:/usr/bin:/bin" };
 
 describe("cronLines", () => {
   test("runs Mira from the installed cwd instead of passing a workspace", () => {
     const lines = cronLines(target);
     expect(lines).toContain("# Mira — cwd=/home/me/proj");
-    expect(lines).toContain("cd '/home/me/proj' && /home/me/.mira/bin/mira sweep");
+    expect(lines).toContain("cd '/home/me/proj' && env PATH='/home/me/.nvm/versions/node/v24/bin:/usr/bin:/bin' /home/me/.mira/bin/mira sweep");
     expect(lines).not.toContain("MIRA_WORKSPACE=");
     expect(lines).not.toContain("--workspace");
   });

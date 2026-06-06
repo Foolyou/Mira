@@ -260,8 +260,10 @@ exposure path (a routine command echoing the secret).
 From an initialized Mira directory, `mira install cron | crontab -` emits the
 schedule (with absolute paths for this machine): a `*/5` backstop sweep plus
 three daily briefs and a Sunday weekly. The generated lines `cd` back to that
-directory before running Mira, so cron and the brains share one SQLite truth
-source. Failures retry on the next tick.
+directory before running Mira and carry the installer shell's `PATH`, so
+npm/nvm-installed helpers such as `lark-cli` and `node` remain visible to cron.
+Install cron from a shell where those helpers already work. Failures retry on
+the next tick.
 
 To remove it later:
 

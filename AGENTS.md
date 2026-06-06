@@ -72,6 +72,8 @@ mira doctor [--check-channel]        # config / channel / delivery backlog (logi
 mira install cron | crontab -                       # run from initialized Mira directory
 mira install cron --uninstall | crontab -           # remove this directory's Mira cron lines
 ```
+`install cron` captures the installer shell's `PATH`, so run it from a shell
+where npm/nvm helpers such as `lark-cli` already work.
 
 All commands print JSON. Don't edit the SQLite file directly — go through `mira`.
 

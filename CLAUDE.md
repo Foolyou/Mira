@@ -47,7 +47,8 @@ Codex alike.
   workspace and install multiple project skills at once. Skill installs write
   cwd-local guidance but never bake a workspace path. Cron should be installed
   from the initialized Mira directory; generated lines `cd` back there before
-  invoking Mira, so exactly-once holds across brains + cron.
+  invoking Mira and carry the installer shell's `PATH`, so npm/nvm helpers such
+  as `lark-cli` stay visible; exactly-once holds across brains + cron.
   `mira install cron --uninstall` prints the crontab with only this directory's
   Mira lines stripped.
 - **Migrations stay additive and ordered** in `db.ts`, guarded so re-runs are

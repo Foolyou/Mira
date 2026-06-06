@@ -24,10 +24,11 @@ export interface Invoker {
 export interface InstallTarget {
   invoker: Invoker;
   cwd: string;
+  envPath?: string;
 }
 
 function shell(t: InstallTarget, ...rest: string[]): string {
-  return ["cd", sh(t.cwd), "&&", t.invoker.command, ...t.invoker.prefix, ...rest].join(" ");
+  return ["cd", sh(t.cwd), "&&", "env", `PATH=${sh(t.envPath ?? process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")}`, t.invoker.command, ...t.invoker.prefix, ...rest].join(" ");
 }
 
 // The brains Mira can install its skill into, and the scope to write it at.
