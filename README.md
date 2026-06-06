@@ -19,21 +19,22 @@ No build step is required to run; `--compile` only exists to ship a deployment
 binary as a fallback.
 
 A Mira workspace is a `.mira` directory — there is **no global/home workspace**.
-By default Mira works against `./.mira` in the current working directory;
-`--workspace <dir>` and `MIRA_WORKSPACE` override that. The workspace must be
-created explicitly:
+Mira works only against `./.mira` in the current working directory; there is no
+`--workspace` flag, `MIRA_WORKSPACE`, or DB-path override in the CLI. The
+workspace must be created explicitly:
 
 ```bash
 mira init          # create ./.mira here (required before any data command)
+mira init --agent codex --agent claude-code
+# create ./.mira and install both project agent skills
 ```
 
 Until it exists, data commands error and point you at `mira init`, so running
-from the wrong directory never silently spawns a second, empty database
-(`--demo` and an explicit `--db <path>` are exempt). A project skill installed
-with `mira install claude-code|codex` binds to — and auto-initializes — that
-project-local `./.mira`; `--user` installs the skill globally but bakes **no**
-workspace (it tells the agent to `mira init` its own working directory); an
-explicit `--workspace` during install wins and is initialized too.
+from the wrong directory never silently spawns a second, empty database. A
+`mira init --agent ...` can install one or more project skills during
+initialization. `mira install claude-code|codex` remains available for reinstalling
+a single skill later; `--user` installs the skill globally with the same cwd
+rule. Agents and cron must run Mira from the intended initialized directory.
 
 ## Install (single binary — the recommended form)
 
@@ -55,25 +56,24 @@ Either way you can then build it yourself and register it everywhere:
 
 ```bash
 bun run compile                 # -> ./mira   (or `bun run dist` for all platforms)
-cd ~/assistant && ./mira init   # create the workspace (./.mira) where you'll use Mira
-./mira install claude-code      # write the Mira skill to .claude/skills/mira/ (--user for ~/.claude)
-./mira install codex            # write the Mira skill to .codex/skills/mira/  (--user for ~/.codex)
-./mira install cron --workspace ~/assistant/.mira | crontab - # the only clock
+cd ~/assistant
+./mira init --agent claude-code --agent codex # create ./.mira and project skills
+./mira install cron | crontab - # the only clock; generated lines cd back here
 ```
 
-All of them should point at **one binary and one workspace**, so the SQLite truth
-source is shared and exactly-once holds across every brain + cron.
+All of them should run from **one initialized directory**, so the SQLite truth
+source (`./.mira/mira.db`) is shared and exactly-once holds across every brain +
+cron.
 
 - **Both brains drive the `mira` CLI** — the contract (see [`AGENTS.md`](./AGENTS.md)).
   `install claude-code`/`install codex` drop the **same** [`SKILL.md`](https://developers.openai.com/codex/skills)
   (the open Agent Skills standard) into the agent's skills directory, so it picks
   Mira up by description and knows how to sequence the commands. Default scope is
-  the project (`.claude/skills/` · `.codex/skills/`) and binds to — and
-  initializes — `./.mira`; add `--user` to install globally
-  (`~/.claude/skills/` · `$CODEX_HOME/skills/`), which bakes **no** workspace and
-  instructs the agent to `mira init` its own working directory. Add
-  `--workspace <dir>` during install to bind (and initialize) a specific
-  workspace.
+  the project (`.claude/skills/` · `.codex/skills/`); add `--user` to install
+  globally (`~/.claude/skills/` · `$CODEX_HOME/skills/`). The skill never bakes a
+  workspace path; it tells the agent to run Mira from the intended directory and
+  use `mira init` there if needed. During first setup, `mira init --agent
+  claude-code --agent codex` writes both project skills in one command.
 
 ### Secondary path — npm / bunx (Bun-only)
 
@@ -87,10 +87,9 @@ bunx mira-copilot help
 
 # or install globally, then `mira …` is on PATH:
 bun add -g mira-copilot
-mira install claude-code --user          # write the skill to ~/.claude/skills/mira/
-mira install codex       --user          # write the skill to $CODEX_HOME/skills/mira/
-cd ~/assistant && mira init              # create the workspace you'll bind cron to
-mira install cron        --via global --workspace ~/assistant/.mira | crontab -
+cd ~/assistant
+mira init --agent claude-code --agent codex # create ./.mira and project skills
+mira install cron        --via global | crontab -
 ```
 
 The skill assumes `mira` is on PATH (true after `bun add -g` or the binary
@@ -98,8 +97,8 @@ install); if it isn't, the skill falls back to `bunx mira-copilot …`. For cron
 `mira install cron --via <binary|bunx|global>` picks how the emitted crontab
 launches Mira: `binary` (absolute path to the compiled file, the default),
 `bunx` (`bunx mira-copilot …`), or `global` (the `mira` shim from `bun add -g`).
-Pass `--workspace` for cron unless `MIRA_WORKSPACE` is already set in the cron
-environment.
+Run it from the initialized Mira directory; the emitted crontab lines `cd` back
+to that directory before invoking Mira.
 
 Releases ship both forms from one CI run (`.github/workflows/release.yml`):
 cross-compiled binaries attached to the GitHub Release **and** `mira-copilot`
@@ -258,22 +257,22 @@ exposure path (a routine command echoing the secret).
 
 ## Cron
 
-`mira install cron --workspace <dir> | crontab -` emits the schedule (with
-absolute paths for this machine): a `*/5` backstop sweep plus three daily briefs
-and a Sunday weekly. Failures retry on the next tick. Always pass an explicit
-`--workspace` (an **initialized** one — run `mira init` there first) so cron and
-the brains share one SQLite truth source.
+From an initialized Mira directory, `mira install cron | crontab -` emits the
+schedule (with absolute paths for this machine): a `*/5` backstop sweep plus
+three daily briefs and a Sunday weekly. The generated lines `cd` back to that
+directory before running Mira, so cron and the brains share one SQLite truth
+source. Failures retry on the next tick.
 
 To remove it later:
 
 ```bash
-mira install cron --uninstall | crontab -   # prints your crontab with Mira's lines stripped
+mira install cron --uninstall | crontab -   # removes this directory's Mira cron lines
 ```
 
-`--uninstall` reads your current crontab, drops the Mira-managed lines (the
-header comment, the `MIRA_WORKSPACE=` assignment, and the `sweep`/`brief`
-schedules) by content, and prints the rest for you to apply — it never writes
-your crontab itself.
+`--uninstall` reads your current crontab, drops only the Mira-managed lines for
+the current directory (including matching old `MIRA_WORKSPACE=<cwd>/.mira`
+blocks), and prints the rest for you to apply — it never writes your crontab
+itself.
 
 ## Migrate real v1 data
 

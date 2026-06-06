@@ -19,49 +19,65 @@ afterAll(() => {
 
 describe("initWorkspace", () => {
   test("creates a fresh workspace and reports created=true", () => {
-    const ws = join(tempDir(), ".mira");
-    expect(isInitialized(ws)).toBe(false);
-    const res = initWorkspace(ws);
-    expect(res.created).toBe(true);
-    expect(res.db_path).toBe(join(ws, "mira.db"));
-    expect(res.migrated_from).toBeUndefined();
-    expect(isInitialized(ws)).toBe(true);
+    withCwd(tempDir(), () => {
+      const ws = join(process.cwd(), ".mira");
+      expect(isInitialized()).toBe(false);
+      const res = initWorkspace();
+      expect(res.created).toBe(true);
+      expect(res.db_path).toBe(join(ws, "mira.db"));
+      expect(res.migrated_from).toBeUndefined();
+      expect(isInitialized()).toBe(true);
+    });
   });
 
   test("is idempotent — re-init reports created=false and preserves data", () => {
-    const ws = join(tempDir(), ".mira");
-    initWorkspace(ws);
-    // write a row, then re-init, and confirm it survives
-    let db = openDb({ path: join(ws, "mira.db") });
-    configSet(db, "marker", "kept");
-    db.close();
-    const res = initWorkspace(ws);
-    expect(res.created).toBe(false);
-    db = openDb({ path: join(ws, "mira.db") });
-    const v = configGet(db, "marker");
-    db.close();
-    expect(v).toBe("kept");
+    withCwd(tempDir(), () => {
+      const ws = join(process.cwd(), ".mira");
+      initWorkspace();
+      // write a row, then re-init, and confirm it survives
+      let db = openDb({ path: join(ws, "mira.db") });
+      configSet(db, "marker", "kept");
+      db.close();
+      const res = initWorkspace();
+      expect(res.created).toBe(false);
+      db = openDb({ path: join(ws, "mira.db") });
+      const v = configGet(db, "marker");
+      db.close();
+      expect(v).toBe("kept");
+    });
   });
 
   test("adopts a legacy .mira/workspace/mira.db by copying it up (backup left)", () => {
-    const ws = join(tempDir(), ".mira");
-    // simulate the pre-redesign nested layout with a row in it
-    const legacyDir = join(ws, "workspace");
-    mkdirSync(legacyDir, { recursive: true });
-    const legacy = join(legacyDir, "mira.db");
-    let db = openDb({ path: legacy });
-    configSet(db, "marker", "legacy-data");
-    db.close();
+    withCwd(tempDir(), () => {
+      const ws = join(process.cwd(), ".mira");
+      // simulate the pre-redesign nested layout with a row in it
+      const legacyDir = join(ws, "workspace");
+      mkdirSync(legacyDir, { recursive: true });
+      const legacy = join(legacyDir, "mira.db");
+      let db = openDb({ path: legacy });
+      configSet(db, "marker", "legacy-data");
+      db.close();
 
-    const res = initWorkspace(ws);
-    expect(res.created).toBe(true);
-    expect(res.migrated_from).toBe(legacy);
-    // data made it to the new top-level db
-    db = openDb({ path: join(ws, "mira.db") });
-    const v = configGet(db, "marker");
-    db.close();
-    expect(v).toBe("legacy-data");
-    // legacy file left in place as a backup
-    expect(existsSync(legacy)).toBe(true);
+      const res = initWorkspace();
+      expect(res.created).toBe(true);
+      expect(res.migrated_from).toBe(legacy);
+      // data made it to the new top-level db
+      db = openDb({ path: join(ws, "mira.db") });
+      const v = configGet(db, "marker");
+      db.close();
+      expect(v).toBe("legacy-data");
+      // legacy file left in place as a backup
+      expect(existsSync(legacy)).toBe(true);
+    });
   });
 });
+
+function withCwd<T>(dir: string, fn: () => T): T {
+  const prev = process.cwd();
+  try {
+    process.chdir(dir);
+    return fn();
+  } finally {
+    process.chdir(prev);
+  }
+}

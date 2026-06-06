@@ -10,7 +10,6 @@ set -eu
 REPO="${MIRA_REPO:-chenan/mira}"
 VERSION="${MIRA_VERSION:-latest}"
 BIN_DIR="${MIRA_BIN_DIR:-$HOME/.mira/bin}"
-WORKSPACE="${MIRA_WORKSPACE:-$HOME/.mira/workspace}"
 
 os="$(uname -s)"; arch="$(uname -m)"
 case "$os" in
@@ -31,7 +30,7 @@ else
   url="https://github.com/${REPO}/releases/download/${VERSION}/${asset}"
 fi
 
-mkdir -p "$BIN_DIR" "$WORKSPACE"
+mkdir -p "$BIN_DIR"
 echo "↓ $url"
 curl -fSL "$url" -o "$BIN_DIR/mira"
 chmod +x "$BIN_DIR/mira"
@@ -44,12 +43,13 @@ esac
 
 cat <<EOF
 
-Next:
+Next (run these from the directory where you want ./.mira to live):
+  mira init --agent claude-code --agent codex   # init ./.mira + project skills
   mira doctor
   mira import-v1 --from /path/to/lifework.db      # bring v1 data over
-  mira install claude-code --user                  # install the Mira skill (~/.claude/skills/mira)
-  mira install codex       --user                  # install the Mira skill (\$CODEX_HOME/skills/mira)
-  mira install cron --workspace "$WORKSPACE" | crontab - # the only clock (5-min sweep + briefs)
+  mira install claude-code --user                  # optional global skill
+  mira install codex       --user                  # optional global skill
+  mira install cron | crontab -                    # generated lines cd back here
 
 Email delivery (iCloud):
   mira config set delivery.default_channel email

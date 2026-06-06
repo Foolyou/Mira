@@ -5,12 +5,11 @@
 #
 #   ./install-local.sh
 #
-# Override:  MIRA_BIN_DIR=~/.local/bin  MIRA_WORKSPACE=~/work  ./install-local.sh
+# Override:  MIRA_BIN_DIR=~/.local/bin  ./install-local.sh
 set -eu
 
 SRC_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 BIN_DIR="${MIRA_BIN_DIR:-$HOME/.mira/bin}"
-WORKSPACE="${MIRA_WORKSPACE:-$HOME/.mira/workspace}"
 
 command -v bun >/dev/null 2>&1 || {
   echo "bun is required to build Mira (https://bun.sh) — not found on PATH" >&2
@@ -24,7 +23,7 @@ bun install --frozen-lockfile
 echo "↻ compiling self-contained binary…"
 bun build --compile src/cli.ts --outfile "$SRC_DIR/mira"
 
-mkdir -p "$BIN_DIR" "$WORKSPACE"
+mkdir -p "$BIN_DIR"
 cp "$SRC_DIR/mira" "$BIN_DIR/mira"
 chmod +x "$BIN_DIR/mira"
 
@@ -36,12 +35,13 @@ esac
 
 cat <<EOF
 
-Next (all point at one binary + one workspace, so exactly-once holds):
+Next (run these from the directory where you want ./.mira to live):
+  $BIN_DIR/mira init --agent claude-code --agent codex # init ./.mira + project skills
   $BIN_DIR/mira doctor
   $BIN_DIR/mira import-v1 --from /path/to/lifework.db   # bring v1 data over
-  $BIN_DIR/mira install claude-code --user               # install the Mira skill (~/.claude/skills/mira)
-  $BIN_DIR/mira install codex       --user               # install the Mira skill (\$CODEX_HOME/skills/mira)
-  $BIN_DIR/mira install cron --workspace "$WORKSPACE" | crontab - # the only clock (5-min sweep + briefs)
+  $BIN_DIR/mira install claude-code --user               # optional global skill
+  $BIN_DIR/mira install codex       --user               # optional global skill
+  $BIN_DIR/mira install cron | crontab -                  # generated lines cd back here
 
 Email delivery (iCloud):
   $BIN_DIR/mira config set delivery.default_channel email

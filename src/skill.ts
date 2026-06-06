@@ -17,43 +17,29 @@ export const SKILL_DESCRIPTION =
   "what is overdue/due-today. All state is one shared SQLite workspace; every command prints JSON. " +
   "Do NOT use for unrelated coding tasks or for editing the SQLite file directly.";
 
-function workspaceGuidance(workspace?: string): string {
-  if (workspace) {
-    return `## Workspace binding
-
-Use this exact workspace for every Mira command unless the user explicitly asks
-for another one:
-
-\`\`\`bash
---workspace ${workspace}
-\`\`\`
-
-This keeps all agent calls, cron jobs, and ad-hoc CLI calls on the same SQLite
-truth source even when the agent's current working directory changes. It was
-created at install time; if a command reports it is not initialized, run
-\`mira init --workspace ${workspace}\` once.`;
-  }
-
+function workspaceGuidance(): string {
   return `## Workspace binding
 
 A Mira workspace is a \`.mira\` directory; there is **no global/home workspace**.
-By default every command works against \`<cwd>/.mira\`, and a workspace must be
-created explicitly — data commands error until it exists.
+Every command works against \`<cwd>/.mira\`; there is no \`--workspace\` flag and
+no \`MIRA_WORKSPACE\` override. A workspace must be created explicitly — data
+commands error until it exists.
 
 **Before using Mira in a working directory, initialize it once:**
 
 \`\`\`bash
 mira init                 # creates ./.mira in the current directory
+mira init --agent codex --agent claude-code
+# creates ./.mira and installs both project agent skills
 \`\`\`
 
-Then either run subsequent commands from that same directory, or pass
-\`--workspace <dir>\` (or set \`MIRA_WORKSPACE\`) so calls don't drift to a
-different \`.mira\` when the working directory changes. Running from the wrong
-directory no longer silently creates a second, empty workspace — it errors and
-points you at \`mira init\`.`;
+Run subsequent commands from that same directory. If a command says you are not
+in a Mira environment, change to the intended directory or run \`mira init\`
+there. Running from the wrong directory never silently creates a second, empty
+workspace.`;
 }
 
-export function skillMarkdown(workspace?: string): string {
+export function skillMarkdown(): string {
   return `---
 name: ${SKILL_NAME}
 description: ${SKILL_DESCRIPTION}
@@ -67,19 +53,17 @@ JSON to stdout. You drive it the exact same way cron and the other brains do,
 against **one shared SQLite workspace**, so nothing drifts and reminders fire
 exactly once.
 
-${workspaceGuidance(workspace)}
+${workspaceGuidance()}
 
 ## Golden rules
 
 1. **Never edit the SQLite file directly.** Go through \`mira\`. The atomic
    claim + \`UNIQUE(spec_id, occurrence_key)\` is what guarantees exactly-once;
    raw writes break it.
-2. **Initialize, then stay on one workspace.** A workspace is a \`.mira\`
-   directory created by \`mira init\`; there is no global one. Pass an explicit
-   \`--workspace <dir>\` with every \`mira\` command when one is listed above (or
-   rely on \`MIRA_WORKSPACE\`) so you read/write the one true DB. If a command
-   says the workspace is not initialized, run \`mira init\` (optionally
-   \`--workspace <dir>\`) — never work around it by switching directories.
+2. **Initialize, then stay in the right directory.** A workspace is the current
+   directory's \`.mira\`, created by \`mira init\`; there is no global one and no
+   manual workspace override. If a command says you are not in a Mira
+   environment, change to the intended directory or run \`mira init\` there.
 3. **\`mira help\` is authoritative.** Run it for the full, current command
    surface and flags rather than guessing. This skill covers *when* and *in what
    order*; \`mira help\` covers *what exists*.
@@ -137,9 +121,9 @@ human-readable message that is not a reminder/brief, use Mira's dedicated send
 commands so channel credentials stay inside the workspace config:
 
 \`\`\`bash
-mira mail send --workspace <dir> --subject "Subject" --html-file /path/to/message.html --text-file /path/to/message.txt
-mira discord send --workspace <dir> --subject "Subject" --text "Short notification"
-mira feishu send --workspace <dir> --subject "Subject" --text "Short notification"
+mira mail send --subject "Subject" --html-file /path/to/message.html --text-file /path/to/message.txt
+mira discord send --subject "Subject" --text "Short notification"
+mira feishu send --subject "Subject" --text "Short notification"
 \`\`\`
 
 For email, prefer \`--html-file\`/\`--text-file\` for substantial content; it uses
@@ -161,11 +145,12 @@ is the one failure mode Mira exists to prevent.
 
 ## Cron (the clock)
 
-Mira is daemonless — OS cron is the only clock. \`mira install cron --workspace
-<dir> | crontab -\` installs the sweep/brief schedule (always bind the same
-workspace so exactly-once holds). To remove it, \`mira install cron --uninstall |
-crontab -\` prints the crontab with Mira's lines stripped for the user to apply.
-Never hand-edit the crontab block.
+Mira is daemonless — OS cron is the only clock. From the initialized Mira
+directory, \`mira install cron | crontab -\` installs the sweep/brief schedule;
+the generated cron lines \`cd\` back to that directory before running Mira. To
+remove it, \`mira install cron --uninstall | crontab -\` prints the crontab with
+this directory's Mira lines stripped for the user to apply. Never hand-edit the
+crontab block.
 
 ## Secrets
 

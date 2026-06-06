@@ -39,17 +39,17 @@ Codex alike.
   busy_timeout). Delivered rows are never re-claimed; failures retry next sweep
   until `delivery.max_attempts`, then surface as backlog in `doctor`/`brief`.
 - **Workspace** is a `.mira` directory — there is **no global/home workspace**.
-  It defaults to `<cwd>/.mira` and is resolved via, in order: the `--workspace`
-  flag, `MIRA_WORKSPACE`, then that cwd-local default. A workspace must be
-  created explicitly with `mira init`; every data command errors (pointing at
-  `mira init`) until it exists, so running from the wrong directory never
-  silently spawns a second empty DB (`--demo`/`--db` are exempt). Project skill
-  installs bind to (and auto-`init`) the installing cwd's `.mira`; user-scope
-  installs bake no workspace and tell the agent to `mira init` its cwd; an
-  install-time `--workspace` overrides both. Cron should always be installed
-  with an explicit workspace so the SQLite truth source is shared and
-  exactly-once holds across brains + cron; `mira install cron --uninstall`
-  prints the crontab with Mira's lines stripped.
+  It is always `<cwd>/.mira`; there is no `--workspace` flag, `MIRA_WORKSPACE`,
+  or CLI DB-path override. A workspace must be created explicitly with
+  `mira init`; every data command errors (pointing at `mira init`) until it
+  exists, so running from the wrong directory never silently spawns a second
+  empty DB. `mira init --agent codex --agent claude-code` can create the
+  workspace and install multiple project skills at once. Skill installs write
+  cwd-local guidance but never bake a workspace path. Cron should be installed
+  from the initialized Mira directory; generated lines `cd` back there before
+  invoking Mira, so exactly-once holds across brains + cron.
+  `mira install cron --uninstall` prints the crontab with only this directory's
+  Mira lines stripped.
 - **Migrations stay additive and ordered** in `db.ts`, guarded so re-runs are
   no-ops, with `PRAGMA user_version` as the schema baseline. Bumping the schema
   means updating the migration test.

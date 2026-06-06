@@ -6,16 +6,17 @@ same way cron and Claude Code do, against the **same shared workspace** so
 nothing drifts.
 
 A workspace is a `.mira` directory; there is **no global/home workspace**. It
-defaults to `<current-working-directory>/.mira` and resolves via `--workspace
-<dir>` > `MIRA_WORKSPACE` > that cwd default. Create it once before any data
-command — running from the wrong directory now errors instead of silently making
-a second empty DB:
+is always `<current-working-directory>/.mira`; there is no `--workspace` flag,
+`MIRA_WORKSPACE`, or CLI DB-path override. Create it once before any data command
+— running from the wrong directory errors instead of silently making a second
+empty DB:
 ```
-mira init [--workspace <dir>]        # required before first use; --demo/--db are exempt
+mira init        # required before first use in the intended directory
+mira init --agent codex --agent claude-code
+# initialize the workspace and both project agent skills
 ```
-When a skill or cron entry has a known workspace, always pass that explicit
-`--workspace <dir>` (or rely on `MIRA_WORKSPACE`) so you read/write the one true
-SQLite file.
+Run subsequent Mira commands from that same directory. If Mira says you are not
+in a Mira environment, `cd` to the intended directory or run `mira init` there.
 
 ## Capture & tasks
 ```
@@ -68,8 +69,8 @@ mira company list | mira project list [--company <id>] | mira note list [--compa
 ## Health & admin
 ```
 mira doctor [--check-channel]        # config / channel / delivery backlog (login only, no send)
-mira install cron --workspace <dir> | crontab -     # install the sweep/brief schedule
-mira install cron --uninstall | crontab -           # remove Mira's cron lines (prints cleaned crontab)
+mira install cron | crontab -                       # run from initialized Mira directory
+mira install cron --uninstall | crontab -           # remove this directory's Mira cron lines
 ```
 
 All commands print JSON. Don't edit the SQLite file directly — go through `mira`.

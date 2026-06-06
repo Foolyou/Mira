@@ -4,9 +4,7 @@
 // command per capability. The agent skill in skill.ts just guides this surface.
 import { openDb, resolveWorkspace, isInitialized, initWorkspace, configGet, configSet, configAll } from "./db.ts";
 import { redactConfigValue, redactConfigMap } from "./secret.ts";
-import { installSkill, cronLines, cronUninstall, NPM_PKG, type Invoker } from "./install.ts";
-import { homedir } from "os";
-import { resolve, join } from "path";
+import { installSkill, cronLines, cronUninstall, NPM_PKG, type Invoker, type SkillAgent } from "./install.ts";
 import * as core from "./core.ts";
 import { sweep, deliverAck } from "./sweep.ts";
 import { sendMail, sendDiscord, sendFeishu, sendTest } from "./delivery/index.ts";
@@ -17,21 +15,23 @@ import { readFileSync } from "fs";
 
 interface Parsed {
   _: string[];
-  flags: Record<string, string | boolean>;
+  flags: Record<string, FlagValue>;
 }
+
+type FlagValue = string | boolean | string[];
 
 function parse(argv: string[]): Parsed {
   const _: string[] = [];
-  const flags: Record<string, string | boolean> = {};
+  const flags: Record<string, FlagValue> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--")) {
       const key = a.slice(2);
       const next = argv[i + 1];
       if (next === undefined || next.startsWith("--")) {
-        flags[key] = true;
+        addFlag(flags, key, true);
       } else {
-        flags[key] = next;
+        addFlag(flags, key, next);
         i++;
       }
     } else {
@@ -41,13 +41,33 @@ function parse(argv: string[]): Parsed {
   return { _, flags };
 }
 
-function num(v: string | boolean | undefined): number | undefined {
+function addFlag(flags: Record<string, FlagValue>, key: string, value: string | boolean): void {
+  const prev = flags[key];
+  if (prev === undefined) {
+    flags[key] = value;
+  } else if (Array.isArray(prev)) {
+    prev.push(String(value));
+  } else {
+    flags[key] = [String(prev), String(value)];
+  }
+}
+
+function num(v: FlagValue | undefined): number | undefined {
+  if (Array.isArray(v)) v = v[v.length - 1];
   if (v === undefined || typeof v === "boolean") return undefined;
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 }
-function str(v: string | boolean | undefined): string | undefined {
+function str(v: FlagValue | undefined): string | undefined {
+  if (Array.isArray(v)) v = v[v.length - 1];
   return typeof v === "string" ? v : undefined;
+}
+function strs(v: FlagValue | undefined): string[] {
+  if (v === undefined || typeof v === "boolean") return [];
+  return (Array.isArray(v) ? v : [v])
+    .flatMap((s) => s.split(","))
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function out(v: unknown): void {
@@ -66,7 +86,26 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
-function flagText(flags: Record<string, string | boolean>, inlineKey: string, fileKey: string): string | undefined {
+function initAgents(flags: Record<string, FlagValue>): SkillAgent[] {
+  const values = [...strs(flags.agent), ...strs(flags.agents)];
+  const out: SkillAgent[] = [];
+  const seen = new Set<string>();
+  for (const v of values) {
+    const expanded = v === "all" ? (["claude-code", "codex"] as const) : [v];
+    for (const agent of expanded) {
+      if (agent !== "claude-code" && agent !== "codex") {
+        fail("init --agent must be claude-code, codex, or all");
+      }
+      if (!seen.has(agent)) {
+        seen.add(agent);
+        out.push(agent);
+      }
+    }
+  }
+  return out;
+}
+
+function flagText(flags: Record<string, FlagValue>, inlineKey: string, fileKey: string): string | undefined {
   const inline = str(flags[inlineKey]);
   const file = str(flags[fileKey]);
   if (inline && file) fail(`use either --${inlineKey} or --${fileKey}, not both`);
@@ -112,17 +151,17 @@ KNOWLEDGE
   capture <text> | capture list [--kind k --source s --status s --limit N]
 
 ADMIN
-  init [--workspace dir]                               create the workspace (.mira) — required before first use
+  init [--agent codex|claude-code|all ...] [--user]   create ./.mira; optionally install agent skills
   config get <key> | config set <key> <value> | config list
   import-v1 --from <lifework.db> [--force]
   doctor [--check-channel]
-  install claude-code|codex [--user] [--workspace dir] install the Mira skill (project, or --user/global)
-  install cron [--via binary|bunx|global] [--bin path --workspace dir] | crontab -
-  install cron --uninstall | crontab -                remove Mira's cron lines (prints the cleaned crontab)
+  install claude-code|codex [--user]                 install the Mira skill (project, or --user/global)
+  install cron [--via binary|bunx|global] [--bin path] | crontab -
+  install cron --uninstall | crontab -                remove this directory's Mira cron lines
 
 GLOBAL FLAGS
-  --workspace <dir> | --demo | --db <path>
-  default workspace: <current-working-directory>/.mira  (create it with: mira init)
+  --demo
+  workspace: <current-working-directory>/.mira  (create it with: mira init)
 `;
 
 async function main() {
@@ -133,66 +172,70 @@ async function main() {
     return;
   }
 
+  if (flags.workspace || flags.db) fail("--workspace/--db are no longer supported; cd to the Mira directory and use its ./.mira workspace");
+  if (process.env.MIRA_WORKSPACE || process.env.MIRA_DB_PATH || process.env.MIRA_DEMO_DB_PATH) {
+    fail("MIRA_WORKSPACE/MIRA_DB_PATH overrides are no longer supported; cd to the Mira directory and use its ./.mira workspace");
+  }
+
   // `mira install <target>`: install the Mira skill into a brain, or emit cron.
   //   claude-code | codex  -> write SKILL.md (project scope; --user for global)
   //   cron                 -> print crontab lines (--via picks how Mira launches)
   if (cmd === "install") {
     const target = _[1];
     if (target === "claude-code" || target === "codex") {
-      out(installSkill(target, flags.user ? "user" : "project", { workspace: str(flags.workspace) }));
+      out(installSkill(target, flags.user ? "user" : "project"));
     } else if (target === "cron") {
       // `--uninstall` is the inverse: read the current crontab, strip Mira's
       // managed lines, and print what should remain (pipe to `crontab -`).
       if (flags.uninstall) {
         const cur = Bun.spawnSync(["crontab", "-l"]);
         const current = cur.exitCode === 0 ? cur.stdout.toString() : "";
-        process.stdout.write(cronUninstall(current));
-        process.stderr.write("# pipe to crontab to apply: mira install cron --uninstall | crontab -\n");
+        process.stdout.write(cronUninstall(current, process.cwd()));
+        process.stderr.write("# removes only this directory's Mira cron; pipe to apply: mira install cron --uninstall | crontab -\n");
         return;
       }
-      const workspace = str(flags.workspace) ?? resolveWorkspace();
+      if (!isInitialized()) fail(`not in a Mira environment at ${resolveWorkspace()} — run: mira init`);
+      const cwd = process.cwd();
       const via = str(flags.via) ?? (/[\\/]bun(\.exe)?$/.test(process.execPath) ? "global" : "binary");
       let invoker: Invoker;
       if (via === "bunx") invoker = { command: "bunx", prefix: [NPM_PKG] };
       else if (via === "global") invoker = { command: "mira", prefix: [] };
       else if (via === "binary") invoker = { command: str(flags.bin) ?? selfBin(), prefix: [] };
       else { fail("--via must be binary|bunx|global"); }
-      process.stdout.write(cronLines({ invoker: invoker!, workspace }));
+      process.stdout.write(cronLines({ invoker: invoker!, cwd }));
     } else {
-      fail("install <claude-code|codex|cron> [--user] [--via binary|bunx|global --bin path --workspace dir]");
+      fail("install <claude-code|codex|cron> [--user] [--via binary|bunx|global --bin path]");
     }
     return;
   }
-
-  // The workspace for this invocation: --workspace (with ~ and relative-path
-  // expansion) > MIRA_WORKSPACE/cwd default. There is no global fallback.
-  const resolveWs = (): string => {
-    const w = str(flags.workspace);
-    if (w) return w.startsWith("~") ? join(homedir(), w.slice(1)) : resolve(process.cwd(), w);
-    return resolveWorkspace();
-  };
 
   // `mira init`: create the workspace (.mira) and run migrations. The one
   // command allowed to bring a workspace into existence; everything else errors
   // until it has run, so you never silently spawn a second empty DB by running
   // from the wrong directory.
   if (cmd === "init") {
-    out(initWorkspace(resolveWs()));
+    const res = initWorkspace();
+    const agents = initAgents(flags);
+    if (agents.length === 0) {
+      out(res);
+    } else {
+      const scope = flags.user ? "user" : "project";
+      out({
+        ...res,
+        skills: agents.map((agent) => installSkill(agent, scope)),
+      });
+    }
     return;
   }
 
-  const explicitDb = str(flags.db);
-  const ws = resolveWs();
-  // Refuse data commands on an uninitialized workspace. `--demo` and an explicit
-  // `--db` path are exempt (ephemeral / advanced / test paths).
-  if (!flags.demo && !explicitDb && !isInitialized(ws)) {
-    const hint = str(flags.workspace) ? ` --workspace ${str(flags.workspace)}` : "";
-    fail(`workspace not initialized at ${join(ws, "mira.db")} — run: mira init${hint}`);
+  // Refuse data commands on an uninitialized cwd-local workspace so running from
+  // the wrong directory cannot silently create or read a second DB.
+  if (!isInitialized()) {
+    fail(`not in a Mira environment at ${resolveWorkspace()} — run: mira init`);
   }
 
   const db = openDb({
     demo: !!flags.demo,
-    path: explicitDb ?? (str(flags.workspace) ? join(ws, "mira.db") : undefined),
   });
 
   try {

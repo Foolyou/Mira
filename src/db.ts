@@ -7,54 +7,37 @@ import { mkdirSync, existsSync, copyFileSync } from "fs";
 export const SCHEMA_VERSION = 1;
 
 // ---------------------------------------------------------------------------
-// Workspace / path resolution. There is NO global/home workspace: a workspace
-// is just a `.mira` directory and Mira always works against the one in the
-// current working directory unless told otherwise. Order (highest precedence
-// first):
-//   per-call override  >  MIRA_WORKSPACE env  >  default <cwd>/.mira
-// A workspace must be created explicitly with `mira init`; data commands error
-// if it does not exist (so you never silently spawn a second, empty DB just by
-// running from the wrong directory). Granular MIRA_DB_PATH / MIRA_DEMO_DB_PATH
-// override the individual db file (used by Docker and tests).
+// Workspace / path resolution. There is NO global/home workspace and no manual
+// workspace override: a workspace is exactly `<current-working-directory>/.mira`.
+// It must be created explicitly with `mira init`; data commands error if it does
+// not exist, so running from the wrong directory never silently reads or creates
+// another DB.
 // ---------------------------------------------------------------------------
-let workspaceOverride: string | null = null;
-
-export function setWorkspaceOverride(ws: string | null): void {
-  workspaceOverride = ws;
-}
-
 export function resolveWorkspace(): string {
-  return (
-    workspaceOverride ??
-    process.env.MIRA_WORKSPACE ??
-    join(process.cwd(), ".mira")
-  );
+  return join(process.cwd(), ".mira");
 }
 
 export function dbPath(demo = false): string {
-  if (!demo && process.env.MIRA_DB_PATH) return process.env.MIRA_DB_PATH;
-  if (demo && process.env.MIRA_DEMO_DB_PATH) return process.env.MIRA_DEMO_DB_PATH;
   return join(resolveWorkspace(), demo ? "demo.db" : "mira.db");
 }
 
 // Has this workspace been initialized (its mira.db exists)? Used by the CLI to
 // refuse data commands until `mira init` has run.
-export function isInitialized(workspace?: string): boolean {
-  const ws = workspace ?? resolveWorkspace();
-  return existsSync(join(ws, "mira.db"));
+export function isInitialized(): boolean {
+  return existsSync(join(resolveWorkspace(), "mira.db"));
 }
 
 // Create (or no-op return) a workspace at `workspace`, running migrations. If a
 // legacy nested layout (<workspace>/workspace/mira.db, from the pre-redesign
 // `.mira/workspace` convention) is found, copy it up so existing data is
 // adopted rather than orphaned — the old copy is left in place as a backup.
-export function initWorkspace(workspace?: string): {
+export function initWorkspace(): {
   workspace: string;
   db_path: string;
   created: boolean;
   migrated_from?: string;
 } {
-  const ws = workspace ?? resolveWorkspace();
+  const ws = resolveWorkspace();
   const target = join(ws, "mira.db");
   if (existsSync(target)) {
     const db = openDb({ path: target, create: true });
