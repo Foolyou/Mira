@@ -130,10 +130,10 @@ For email, prefer \`--html-file\`/\`--text-file\` for substantial content; it us
 \`channel.email\`'s configured recipient by default. Discord is send-only for
 short notifications (text only — any HTML is flattened); depending on how
 \`channel.discord\` is configured it either posts to a channel (webhook) or DMs a
-user (bot token). Feishu sends to the user's own account through the already
-authenticated local \`lark-cli\`; Mira stores no Feishu bot credentials. Do not
-ask for or print channel secrets. Use \`--channel stdout\` only for local
-dry/demo checks.
+user (bot token). Feishu resolves the user's own account through the already
+authenticated local \`lark-cli\`, then DMs it with the local app bot identity so
+the client can notify; Mira stores no Feishu bot credentials. Do not ask for or
+print channel secrets. Use \`--channel stdout\` only for local dry/demo checks.
 
 ## Health & backlog
 

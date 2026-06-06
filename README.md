@@ -119,7 +119,7 @@ published to npm.
 - `src/time.ts` — local-naive time (`YYYY-MM-DD HH:MM`), ISO week, weekday (0=Mon).
 - `src/recurrence.ts` — the ONE resolver: `resolveOccurrences` + `isDueOn`.
 - `src/sweep.ts` — the heart: candidate → `INSERT OR IGNORE` → atomic claim → deliver. `deliverAck` for B2.
-- `src/delivery/` — `Channel` port; `stdout` (dev/agent), `email` (nodemailer/iCloud), `discord` (send-only webhook/bot DM), and `feishu` (local `lark-cli` self-DM).
+- `src/delivery/` — `Channel` port; `stdout` (dev/agent), `email` (nodemailer/iCloud), `discord` (send-only webhook/bot DM), and `feishu` (local `lark-cli` bot DM to self).
 - `src/core.ts` — task/reminder/recurrence CRUD + read-models (dashboard, search, timeline, context, meeting_prep).
 - `src/brief.ts` — daily/weekly HTML+text brief, with delivery-backlog alerts.
 - `src/import.ts` — `import-v1` from `data/lifework.db`.
@@ -150,7 +150,8 @@ one DB file, both yield exactly one `delivered` row.
 Channel policy lives in Mira, never in the agent, so Claude Code and Codex
 deliver byte-for-byte identically. Email/Discord credentials live in the
 workspace DB; Feishu instead uses the user's already authenticated local
-`lark-cli` profile and stores no Mira-side Feishu credentials.
+`lark-cli` profile and its configured bot identity, storing no Mira-side Feishu
+credentials.
 
 Agents can also send explicit rich-text email through the same configured
 channel when the user asks for it:
@@ -169,12 +170,13 @@ configured webhook:
 mira discord send --subject "Heads up" --text "Backup finished"
 ```
 
-Feishu uses the local `lark-cli` user identity and sends a private message to
-that same account. There is no Mira bot credential or recipient config:
+Feishu uses local `lark-cli`: user auth resolves your own open_id, then the
+configured local app bot DMs that account so the client can notify. There is no
+Mira bot credential or recipient config:
 
 ```bash
 mira config set delivery.default_channel feishu
-mira doctor --check-channel        # checks local lark-cli user auth (sends nothing)
+mira doctor --check-channel        # checks local lark-cli auth (sends nothing)
 mira send-test                     # actually delivers a test message to yourself
 mira feishu send --subject "Heads up" --text "Backup finished"
 ```

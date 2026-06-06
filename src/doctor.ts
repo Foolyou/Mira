@@ -77,12 +77,12 @@ export async function doctor(
       checks.push({
         name: "feishu-cli",
         ok: true,
-        detail: "uses local lark-cli user auth; no Mira channel config required",
+        detail: "uses local lark-cli user auth plus bot identity; no Mira channel config required",
       });
       if (opts.checkChannel) {
         try {
           await new FeishuChannel(db).verify();
-          checks.push({ name: "feishu-connectivity", ok: true, detail: "lark-cli user auth ok" });
+          checks.push({ name: "feishu-connectivity", ok: true, detail: "lark-cli auth ok" });
         } catch (e: any) {
           checks.push({ name: "feishu-connectivity", ok: false, detail: String(e?.message ?? e) });
         }

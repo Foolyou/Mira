@@ -1,7 +1,7 @@
 // delivery/feishu.ts — Feishu/Lark notifications via the user's local lark-cli.
 // Mira stores no Feishu app credentials: lark-cli owns auth and profile state.
-// Each send resolves the current user and sends a direct message to that same
-// account, which keeps this channel daemonless and self-addressed.
+// Each send resolves the current user with user auth, then has the local app bot
+// DM that account. Sending as the user to self does not reliably notify.
 import type { Database } from "bun:sqlite";
 import type { Channel, Payload } from "./index.ts";
 
@@ -26,7 +26,7 @@ export class FeishuChannel implements Channel {
       "im",
       "+messages-send",
       "--as",
-      "user",
+      "bot",
       "--user-id",
       userId,
       "--text",
@@ -38,6 +38,7 @@ export class FeishuChannel implements Channel {
 
   async verify(): Promise<void> {
     await this.selfOpenId();
+    await this.botReady();
   }
 
   private async selfOpenId(): Promise<string> {
@@ -58,6 +59,20 @@ export class FeishuChannel implements Channel {
     const id = parsed?.data?.user?.open_id;
     if (!id) throw new Error("Feishu current-user lookup returned no data.user.open_id");
     return String(id);
+  }
+
+  private async botReady(): Promise<void> {
+    const out = await this.checked(["auth", "status"], "Feishu bot identity check");
+    let parsed: any;
+    try {
+      parsed = JSON.parse(out || "{}");
+    } catch {
+      throw new Error("Feishu bot identity check returned invalid JSON");
+    }
+    const bot = parsed?.identities?.bot;
+    if (!bot?.available || bot?.status !== "ready") {
+      throw new Error(`Feishu bot identity is not ready: ${bot?.message ?? bot?.status ?? "missing bot status"}`);
+    }
   }
 
   private async checked(args: string[], what: string): Promise<string> {

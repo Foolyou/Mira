@@ -1,4 +1,4 @@
-// Feishu channel — self-DM through the user's local lark-cli. Tests inject a
+// Feishu channel — bot DM through the user's local lark-cli. Tests inject a
 // command runner so no real Feishu API call is made.
 import { test, expect, describe } from "bun:test";
 import { openDb } from "../src/db.ts";
@@ -19,12 +19,20 @@ function ok(stdout: unknown = { ok: true }): CommandResult {
   return { exitCode: 0, stdout: JSON.stringify(stdout), stderr: "" };
 }
 
+function userOk() {
+  return ok({ ok: true, data: { user: { open_id: "ou_self" } } });
+}
+
+function botOk() {
+  return ok({ identities: { bot: { available: true, status: "ready", message: "Bot identity: ready" } } });
+}
+
 describe("feishu channel", () => {
-  test("looks up the current user and sends a direct text message to self", async () => {
+  test("looks up the current user and sends a bot direct message to self", async () => {
     const { db, cleanup } = freshDb();
     const calls: string[][] = [];
     const replies = [
-      ok({ ok: true, data: { user: { open_id: "ou_self" } } }),
+      userOk(),
       ok({ ok: true, data: { message_id: "om_1" } }),
     ];
     try {
@@ -40,7 +48,7 @@ describe("feishu channel", () => {
         "im",
         "+messages-send",
         "--as",
-        "user",
+        "bot",
         "--user-id",
         "ou_self",
         "--text",
@@ -51,17 +59,33 @@ describe("feishu channel", () => {
     } finally { cleanup(); }
   });
 
-  test("verify only checks local user auth and does not send", async () => {
+  test("verify checks local user auth and bot readiness without sending", async () => {
     const { db, cleanup } = freshDb();
     const calls: string[][] = [];
+    const replies = [userOk(), botOk()];
     try {
       const ch = new FeishuChannel(db, (args) => {
         calls.push(args);
-        return ok({ ok: true, data: { user: { open_id: "ou_self" } } });
+        return replies.shift()!;
       });
       await ch.verify();
 
-      expect(calls).toEqual([["contact", "+get-user", "--as", "user", "--format", "json"]]);
+      expect(calls).toEqual([
+        ["contact", "+get-user", "--as", "user", "--format", "json"],
+        ["auth", "status"],
+      ]);
+    } finally { cleanup(); }
+  });
+
+  test("verify errors when bot identity is not ready", async () => {
+    const { db, cleanup } = freshDb();
+    const replies = [
+      userOk(),
+      ok({ identities: { bot: { available: false, status: "missing", message: "Bot identity: unavailable" } } }),
+    ];
+    try {
+      const ch = new FeishuChannel(db, () => replies.shift()!);
+      await expect(ch.verify()).rejects.toThrow(/bot identity is not ready/);
     } finally { cleanup(); }
   });
 

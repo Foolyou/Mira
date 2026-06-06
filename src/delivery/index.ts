@@ -117,9 +117,9 @@ export async function sendDiscord(
   return { sent: true, channel: "discord", payload };
 }
 
-// Feishu sends through the locally authenticated lark-cli user identity. It is
-// intentionally self-addressed: the channel resolves the current user and DMs
-// that same account, so Mira needs no Feishu credentials or recipient config.
+// Feishu resolves the current user through local lark-cli user auth, then sends
+// with the local bot identity so the client can notify. Mira needs no Feishu
+// credentials or recipient config.
 export async function sendFeishu(
   db: Database,
   opts: SendFeishuOptions,

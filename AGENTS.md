@@ -48,7 +48,7 @@ mira brief [--weekly] [--send]
 mira send-test [--channel email|discord|feishu]   # actually deliver a test message (real send, not a config check)
 mira mail send --subject "主题" --html-file /tmp/msg.html --text-file /tmp/msg.txt
 mira discord send --subject "主题" --text "通知正文"   # send-only Discord webhook notification
-mira feishu send --subject "主题" --text "通知正文"   # send to yourself through local lark-cli
+mira feishu send --subject "主题" --text "通知正文"   # bot-DM yourself through local lark-cli
 ```
 If `delivery.mode=agent`, `mira sweep` prints claimed payloads as JSON and waits
 for your `deliver-ack`. Read the `payloads[].log_id` and ack each after sending.
@@ -56,8 +56,8 @@ Use `mail send` for Agent-authored rich-text email; it sends to the configured
 `channel.email.to` recipient and keeps SMTP secrets inside Mira. Use `discord
 send` for a notification through the configured `channel.discord` — a channel
 webhook or a bot DM depending on the stored config shape (text only; HTML is
-flattened). Use `feishu send` for a self-notification through the user's already
-authenticated `lark-cli`; Mira stores no Feishu bot credentials.
+flattened). Use `feishu send` for a self-notification through the user's local
+`lark-cli` bot identity; Mira stores no Feishu bot credentials.
 
 ## Read models
 ```
